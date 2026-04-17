@@ -31,3 +31,13 @@ data/
 .gopath
 
 token_estimator_test.go
+
+# Scratch / temp files
+*.recovery.bak
+/[0-9]*.md
+/*-plan.md
+/*-changelog.md
+/*-dev-plan.md
+/*-dev-summary.md
+/deconflict.md
+/review.md

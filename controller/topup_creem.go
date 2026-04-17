@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"io"
 	"log"
@@ -358,6 +359,10 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent) {
 		log.Printf("Creem充值处理失败: %s, 订单号: %s", err.Error(), referenceId)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
+	}
+
+	if err := service.ProcessCommission(topUp.UserId, topUp.TradeNo, topUp.Money); err != nil {
+		log.Printf("Creem 充值佣金处理失败: %v, 订单: %s", err, referenceId)
 	}
 
 	log.Printf("Creem充值成功 - 订单号: %s, 充值额度: %d, 支付金额: %.2f",

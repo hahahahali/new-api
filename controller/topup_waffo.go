@@ -363,6 +363,12 @@ func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.Pa
 		return
 	}
 
+	if topUp := model.GetTopUpByTradeNo(merchantOrderId); topUp != nil {
+		if err := service.ProcessCommission(topUp.UserId, topUp.TradeNo, topUp.Money); err != nil {
+			log.Printf("Waffo 充值佣金处理失败: %v, 订单: %s", err, merchantOrderId)
+		}
+	}
+
 	log.Printf("Waffo 充值成功 - 订单: %s", merchantOrderId)
 	sendWaffoWebhookResponse(c, wh, true, "")
 }

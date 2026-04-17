@@ -50,6 +50,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/creem/webhook", controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", controller.WaffoWebhook)
 
+		// Logout alias — frontend sends POST /api/auth/logout
+		apiRouter.POST("/auth/logout", controller.Logout)
+
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
@@ -62,6 +65,7 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.POST("/passkey/login/finish", middleware.CriticalRateLimit(), controller.PasskeyLoginFinish)
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
 			userRoute.GET("/logout", controller.Logout)
+			userRoute.POST("/logout", controller.Logout) // alias for clients using POST
 			userRoute.POST("/epay/notify", controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
 			userRoute.GET("/groups", controller.GetUserGroups)
@@ -165,6 +169,44 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)
 		apiRouter.POST("/subscription/epay/return", controller.SubscriptionEpayReturn)
+
+		// KOL routes (requires kol group)
+		kolRoute := apiRouter.Group("/kol")
+		kolRoute.Use(middleware.UserAuth())
+		kolRoute.Use(middleware.KolAuth())
+		{
+			kolRoute.GET("/dashboard", controller.GetKolDashboard)
+			kolRoute.GET("/invitees", controller.GetKolInvitees)
+			kolRoute.GET("/commissions", controller.GetKolCommissions)
+			kolRoute.GET("/withdrawals", controller.GetKolWithdrawals)
+			kolRoute.POST("/withdraw", controller.RequestKolWithdraw)
+			kolRoute.POST("/stripe-connect/onboard", controller.KolStripeConnectOnboard)
+			kolRoute.GET("/stripe-connect/status", controller.KolStripeConnectStatus)
+		}
+
+		// KOL admin routes
+		kolAdminRoute := apiRouter.Group("/kol/admin")
+		kolAdminRoute.Use(middleware.AdminAuth())
+		{
+			kolAdminRoute.PUT("/users/:id/aff_code", controller.AdminUpdateKolAffCode)
+			kolAdminRoute.GET("/withdrawals", controller.AdminGetAllWithdrawals)
+			kolAdminRoute.POST("/withdrawals/:id/reconcile-transfer", controller.AdminReconcileWithdrawalTransfer)
+		}
+
+		// Affiliate application (public, no auth)
+		apiRouter.POST("/affiliate/apply", controller.SubmitAffiliateApplication)
+		apiRouter.GET("/affiliate/apply", controller.GetAffiliateApplicationStatus)
+
+		// Affiliate review (reviewer group + root)
+		affiliateReviewRoute := apiRouter.Group("/affiliate")
+		affiliateReviewRoute.Use(middleware.UserAuth())
+		affiliateReviewRoute.Use(middleware.ReviewerOrRootAuth())
+		{
+			affiliateReviewRoute.GET("/applications", controller.GetAffiliateApplications)
+			affiliateReviewRoute.POST("/applications/:id/approve", controller.ApproveAffiliateApplication)
+			affiliateReviewRoute.POST("/applications/:id/reject", controller.RejectAffiliateApplication)
+		}
+
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
 		{

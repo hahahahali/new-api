@@ -267,6 +267,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	inviterId := 0
 	if affCode != nil {
 		inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
+		// Only accept invitation codes from KOL users
+		if inviterId > 0 {
+			inviter, err := model.GetUserById(inviterId, false)
+			if err != nil || inviter == nil || inviter.Group != "kol" {
+				inviterId = 0
+			}
+		}
 	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic

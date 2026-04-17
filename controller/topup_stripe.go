@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -278,6 +279,12 @@ func fulfillOrder(event stripe.Event, referenceId string, customerId string) {
 	if err != nil {
 		log.Println(err.Error(), referenceId)
 		return
+	}
+
+	if topUp := model.GetTopUpByTradeNo(referenceId); topUp != nil {
+		if err := service.ProcessCommission(topUp.UserId, topUp.TradeNo, topUp.Money); err != nil {
+			log.Printf("Stripe 充值佣金处理失败: %v, 订单: %s", err, referenceId)
+		}
 	}
 
 	total, _ := strconv.ParseFloat(event.GetObjectValue("amount_total"), 64)

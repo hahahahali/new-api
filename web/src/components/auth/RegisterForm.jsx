@@ -34,6 +34,7 @@ import {
 } from '../../helpers';
 import Turnstile from 'react-turnstile';
 import {
+  Banner,
   Button,
   Card,
   Checkbox,
@@ -114,10 +115,17 @@ const RegisterForm = () => {
   const logo = getLogo();
   const systemName = getSystemName();
 
-  let affCode = new URLSearchParams(window.location.search).get('aff');
-  if (affCode) {
-    localStorage.setItem('aff', affCode);
-  }
+  const urlAffCode = new URLSearchParams(window.location.search).get('aff');
+  const [affCodeFromUrl] = useState(!!urlAffCode);
+  const [affCode, setAffCode] = useState(() => {
+    if (urlAffCode) {
+      localStorage.setItem('aff', urlAffCode);
+      return urlAffCode;
+    }
+    return localStorage.getItem('aff') || '';
+  });
+
+  const kolToken = new URLSearchParams(window.location.search).get('kol_token') || '';
 
   const status = useMemo(() => {
     if (statusState?.status) return statusState.status;
@@ -231,12 +239,9 @@ const RegisterForm = () => {
       }
       setRegisterLoading(true);
       try {
-        if (!affCode) {
-          affCode = localStorage.getItem('aff');
-        }
-        inputs.aff_code = affCode;
+        inputs.aff_code = affCode || '';
         const res = await API.post(
-          `/api/user/register?turnstile=${turnstileToken}`,
+          `/api/user/register?turnstile=${turnstileToken}${kolToken ? `&kol_token=${encodeURIComponent(kolToken)}` : ''}`,
           inputs,
         );
         const { success, message } = res.data;
@@ -571,6 +576,13 @@ const RegisterForm = () => {
                 {t('注 册')}
               </Title>
             </div>
+            {kolToken && (
+              <Banner
+                type='success'
+                description={t('您正在通过达人邀请链接注册，注册后将自动加入达人分组')}
+                className='mx-2 mb-2'
+              />
+            )}
             <div className='px-2 py-8'>
               <Form className='space-y-3'>
                 <Form.Input
@@ -600,6 +612,21 @@ const RegisterForm = () => {
                   mode='password'
                   onChange={(value) => handleChange('password2', value)}
                   prefix={<IconLock />}
+                />
+
+                <Form.Input
+                  field='aff_code'
+                  label={t('邀请码')}
+                  placeholder={t('输入邀请码（选填）')}
+                  name='aff_code'
+                  value={affCode}
+                  disabled={affCodeFromUrl}
+                  onChange={(value) => {
+                    if (!affCodeFromUrl) {
+                      setAffCode(value);
+                    }
+                  }}
+                  prefix={<IconKey />}
                 />
 
                 {showEmailVerification && (

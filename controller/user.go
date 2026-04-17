@@ -174,6 +174,13 @@ func Register(c *gin.Context) {
 	}
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
+	// Only accept invitation codes from KOL users
+	if inviterId > 0 {
+		inviter, err := model.GetUserById(inviterId, false)
+		if err != nil || inviter == nil || inviter.Group != "kol" {
+			inviterId = 0
+		}
+	}
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,
@@ -194,6 +201,15 @@ func Register(c *gin.Context) {
 	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
+	}
+
+	// Handle KOL invite token — set group to "kol" if a valid unused token was provided
+	kolToken := strings.TrimSpace(c.Query("kol_token"))
+	if kolToken != "" {
+		if appErr := applyKolInviteToken(kolToken, insertedUser.Id); appErr != nil {
+			common.SysLog(fmt.Sprintf("kol_token apply failed for user %d: %v", insertedUser.Id, appErr))
+			// Non-fatal: continue with normal registration
+		}
 	}
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {
@@ -1242,4 +1258,22 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	common.ApiSuccessI18n(c, i18n.MsgSettingSaved, nil)
+}
+
+// applyKolInviteToken validates a one-time KOL invite token and, if valid,
+// sets the given user's group to "kol" and marks the token as used.
+func applyKolInviteToken(token string, userId int) error {
+	app, err := model.GetApplicationByToken(token)
+	if err != nil {
+		return err
+	}
+	if app == nil || app.Status != model.AffiliateStatusApproved || app.TokenUsed {
+		return fmt.Errorf("invalid or already used kol_token")
+	}
+	// Update user group to kol
+	if err := model.DB.Model(&model.User{}).Where("id = ?", userId).
+		Update("group", "kol").Error; err != nil {
+		return err
+	}
+	return model.MarkTokenUsed(token)
 }

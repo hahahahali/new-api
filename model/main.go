@@ -111,6 +111,9 @@ func CheckSetup() {
 	} else {
 		// Setup record exists, system is initialized
 		common.SysLog("system is already initialized at: " + time.Unix(setup.InitializedAt, 0).String())
+		if !RootUserExists() {
+			common.SysLog("warning: setup record exists but no root user was found; login to the admin platform will fail until a root account is recreated")
+		}
 		constant.Setup = true
 	}
 }
@@ -203,7 +206,13 @@ func InitDB() (err error) {
 		}
 		common.SysLog("database migration started")
 		err = migrateDB()
-		return err
+		if err != nil {
+			return err
+		}
+		if err = createRootAccountIfNeed(); err != nil {
+			return err
+		}
+		return nil
 	} else {
 		common.FatalLog(err)
 	}
@@ -255,10 +264,9 @@ func migrateDB() error {
 		return err
 	}
 
-	err := DB.AutoMigrate(
+	models := []interface{}{
 		&Channel{},
 		&Token{},
-		&User{},
 		&PasskeyCredential{},
 		&Option{},
 		&Redemption{},
@@ -280,12 +288,37 @@ func migrateDB() error {
 		&SubscriptionPreConsumeRecord{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
-	)
+	}
+	if !common.UsingSQLite {
+		models = append([]interface{}{&User{}}, models...)
+		models = append(models, &CommissionRecord{})
+		models = append(models, &WithdrawalRequest{})
+		models = append(models, &AffiliateApplication{})
+	}
+	// SQLite + User is intentionally excluded from AutoMigrate.
+	// The glebarez/sqlite migrator may try to ALTER COLUMN by recreating the
+	// entire table when legacy schemas differ on UNIQUE/default metadata (for
+	// example access_token / aff_code). That path is unsafe for existing user
+	// data and was the root cause behind a real-world users-table wipe.
+
+	err := DB.AutoMigrate(models...)
 	if err != nil {
 		return err
 	}
 	if common.UsingSQLite {
+		if err := ensureUserTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureCommissionRecordTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureWithdrawalRequestTableSQLite(); err != nil {
+			return err
+		}
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureAffiliateApplicationTableSQLite(); err != nil {
 			return err
 		}
 	} else {
@@ -306,7 +339,6 @@ func migrateDBFast() error {
 	}{
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
-		{&User{}, "User"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
@@ -329,6 +361,29 @@ func migrateDBFast() error {
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 	}
+	if !common.UsingSQLite {
+		migrations = append(migrations,
+			struct {
+				model interface{}
+				name  string
+			}{&User{}, "User"},
+			struct {
+				model interface{}
+				name  string
+			}{&CommissionRecord{}, "CommissionRecord"},
+			struct {
+				model interface{}
+				name  string
+			}{&WithdrawalRequest{}, "WithdrawalRequest"},
+			struct {
+				model interface{}
+				name  string
+			}{&AffiliateApplication{}, "AffiliateApplication"},
+		)
+	}
+	// Keep SQLite User out of the parallel AutoMigrate path for the same reason
+	// as migrateDB(): legacy users tables must only be evolved with additive,
+	// column-by-column migrations.
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
 
@@ -353,7 +408,19 @@ func migrateDBFast() error {
 		}
 	}
 	if common.UsingSQLite {
+		if err := ensureUserTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureCommissionRecordTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureWithdrawalRequestTableSQLite(); err != nil {
+			return err
+		}
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureAffiliateApplicationTableSQLite(); err != nil {
 			return err
 		}
 	} else {
@@ -376,6 +443,191 @@ func migrateLOGDB() error {
 type sqliteColumnDef struct {
 	Name string
 	DDL  string
+}
+
+func ensureUserTableSQLite() error {
+	if !common.UsingSQLite {
+		return nil
+	}
+	tableName := "users"
+	if !DB.Migrator().HasTable(tableName) {
+		return DB.AutoMigrate(&User{})
+	}
+
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Raw("PRAGMA table_info(`" + tableName + "`)").Scan(&cols).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		existing[c.Name] = struct{}{}
+	}
+
+	required := []sqliteColumnDef{
+		{Name: "kol_balance", DDL: "`kol_balance` decimal(10,6) DEFAULT 0"},
+		{Name: "kol_history_balance", DDL: "`kol_history_balance` decimal(10,6) DEFAULT 0"},
+		{Name: "stripe_connect_account_id", DDL: "`stripe_connect_account_id` varchar(128) DEFAULT ''"},
+		{Name: "stripe_connect_onboarded", DDL: "`stripe_connect_onboarded` numeric DEFAULT false"},
+	}
+	for _, col := range required {
+		if _, ok := existing[col.Name]; ok {
+			continue
+		}
+		if err := DB.Exec("ALTER TABLE `" + tableName + "` ADD COLUMN " + col.DDL).Error; err != nil {
+			return err
+		}
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS `idx_users_display_name` ON `users`(`display_name`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_email` ON `users`(`email`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_github_id` ON `users`(`github_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_discord_id` ON `users`(`discord_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_oidc_id` ON `users`(`oidc_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_wechat_id` ON `users`(`wechat_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_telegram_id` ON `users`(`telegram_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_inviter_id` ON `users`(`inviter_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_deleted_at` ON `users`(`deleted_at`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_linux_do_id` ON `users`(`linux_do_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_users_stripe_customer` ON `users`(`stripe_customer`)",
+	}
+	for _, sql := range indexes {
+		if err := DB.Exec(sql).Error; err != nil {
+			return err
+		}
+	}
+
+	if err := warnLegacySQLiteUserUniqueConstraints(tableName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func warnLegacySQLiteUserUniqueConstraints(tableName string) error {
+	var createSQL string
+	if err := DB.Raw(
+		"SELECT sql FROM sqlite_master WHERE type = ? AND name = ?",
+		"table", tableName,
+	).Scan(&createSQL).Error; err != nil {
+		return err
+	}
+
+	normalized := strings.ToLower(createSQL)
+	missing := make([]string, 0, 2)
+	if !strings.Contains(normalized, "access_token` char(32) unique") &&
+		!strings.Contains(normalized, "\"access_token\" char(32) unique") &&
+		!strings.Contains(normalized, " access_token char(32) unique") {
+		missing = append(missing, "access_token")
+	}
+	if !strings.Contains(normalized, "aff_code` varchar(32) unique") &&
+		!strings.Contains(normalized, "\"aff_code\" varchar(32) unique") &&
+		!strings.Contains(normalized, " aff_code varchar(32) unique") {
+		missing = append(missing, "aff_code")
+	}
+	if len(missing) > 0 {
+		common.SysLog(
+			"warning: legacy SQLite users schema is missing UNIQUE constraints for " +
+				strings.Join(missing, ", ") +
+				"; automatic backfill is skipped to protect existing user rows",
+		)
+	}
+	return nil
+}
+
+func ensureCommissionRecordTableSQLite() error {
+	if !common.UsingSQLite {
+		return nil
+	}
+	tableName := "commission_records"
+	if !DB.Migrator().HasTable(tableName) {
+		return DB.AutoMigrate(&CommissionRecord{})
+	}
+
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Raw("PRAGMA table_info(`" + tableName + "`)").Scan(&cols).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		existing[c.Name] = struct{}{}
+	}
+
+	required := []sqliteColumnDef{
+		{Name: "available_at", DDL: "`available_at` bigint DEFAULT 0"},
+	}
+	for _, col := range required {
+		if _, ok := existing[col.Name]; ok {
+			continue
+		}
+		if err := DB.Exec("ALTER TABLE `" + tableName + "` ADD COLUMN " + col.DDL).Error; err != nil {
+			return err
+		}
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS `idx_commission_records_status` ON `commission_records`(`status`)",
+		"CREATE INDEX IF NOT EXISTS `idx_commission_records_available_at` ON `commission_records`(`available_at`)",
+	}
+	for _, sql := range indexes {
+		if err := DB.Exec(sql).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func ensureWithdrawalRequestTableSQLite() error {
+	if !common.UsingSQLite {
+		return nil
+	}
+	tableName := "withdrawal_requests"
+	if !DB.Migrator().HasTable(tableName) {
+		return DB.AutoMigrate(&WithdrawalRequest{})
+	}
+
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Raw("PRAGMA table_info(`" + tableName + "`)").Scan(&cols).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		existing[c.Name] = struct{}{}
+	}
+
+	required := []sqliteColumnDef{
+		{Name: "stripe_transfer_id", DDL: "`stripe_transfer_id` varchar(128) DEFAULT ''"},
+		{Name: "reject_reason", DDL: "`reject_reason` text"},
+		{Name: "created_at", DDL: "`created_at` bigint"},
+		{Name: "updated_at", DDL: "`updated_at` bigint"},
+	}
+	for _, col := range required {
+		if _, ok := existing[col.Name]; ok {
+			continue
+		}
+		if err := DB.Exec("ALTER TABLE `" + tableName + "` ADD COLUMN " + col.DDL).Error; err != nil {
+			return err
+		}
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS `idx_withdrawal_requests_user_id` ON `withdrawal_requests`(`user_id`)",
+		"CREATE INDEX IF NOT EXISTS `idx_withdrawal_requests_status` ON `withdrawal_requests`(`status`)",
+	}
+	for _, sql := range indexes {
+		if err := DB.Exec(sql).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func ensureSubscriptionPlanTableSQLite() error {
@@ -446,6 +698,64 @@ PRIMARY KEY (` + "`id`" + `)
 			return err
 		}
 	}
+	return nil
+}
+
+func ensureAffiliateApplicationTableSQLite() error {
+	if !common.UsingSQLite {
+		return nil
+	}
+	tableName := "affiliate_applications"
+	if !DB.Migrator().HasTable(tableName) {
+		return DB.AutoMigrate(&AffiliateApplication{})
+	}
+
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Raw("PRAGMA table_info(`" + tableName + "`)").Scan(&cols).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		existing[c.Name] = struct{}{}
+	}
+
+	required := []sqliteColumnDef{
+		{Name: "name", DDL: "`name` varchar(64) NOT NULL DEFAULT ''"},
+		{Name: "email", DDL: "`email` varchar(128) NOT NULL DEFAULT ''"},
+		{Name: "country", DDL: "`country` varchar(64) DEFAULT ''"},
+		{Name: "phone", DDL: "`phone` varchar(32) DEFAULT ''"},
+		{Name: "instagram", DDL: "`instagram` varchar(128) DEFAULT ''"},
+		{Name: "tiktok", DDL: "`tiktok` varchar(128) DEFAULT ''"},
+		{Name: "youtube", DDL: "`youtube` varchar(256) DEFAULT ''"},
+		{Name: "other_social", DDL: "`other_social` varchar(256) DEFAULT ''"},
+		{Name: "status", DDL: "`status` varchar(16) DEFAULT 'pending'"},
+		{Name: "kol_invite_token", DDL: "`kol_invite_token` varchar(64) DEFAULT ''"},
+		{Name: "token_used", DDL: "`token_used` numeric DEFAULT 0"},
+		{Name: "created_at", DDL: "`created_at` bigint DEFAULT 0"},
+		{Name: "updated_at", DDL: "`updated_at` bigint DEFAULT 0"},
+	}
+	for _, col := range required {
+		if _, ok := existing[col.Name]; ok {
+			continue
+		}
+		if err := DB.Exec("ALTER TABLE `" + tableName + "` ADD COLUMN " + col.DDL).Error; err != nil {
+			return err
+		}
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS `idx_affiliate_applications_status` ON `affiliate_applications`(`status`)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS `idx_affiliate_applications_email` ON `affiliate_applications`(`email`)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS `idx_affiliate_applications_kol_invite_token` ON `affiliate_applications`(`kol_invite_token`)",
+	}
+	for _, sql := range indexes {
+		if err := DB.Exec(sql).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

@@ -50,6 +50,10 @@ type User struct {
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	KolBalance              float64 `json:"kol_balance" gorm:"type:decimal(10,6);default:0;column:kol_balance"`
+	KolHistoryBalance       float64 `json:"kol_history_balance" gorm:"type:decimal(10,6);default:0;column:kol_history_balance"`
+	StripeConnectAccountId  string  `json:"stripe_connect_account_id" gorm:"type:varchar(128);default:'';column:stripe_connect_account_id"`
+	StripeConnectOnboarded  bool    `json:"stripe_connect_onboarded" gorm:"default:false;column:stripe_connect_onboarded"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -328,6 +332,10 @@ func HardDeleteUserById(id int) error {
 	return err
 }
 
+// inviteUser increments the inviter's AffCount and AffQuota by QuotaForInviter.
+// Kept for backwards-compatibility with the legacy quota-gift invitation flow,
+// but is no longer called — the KOL commission system (recharge-based, 3-day freeze)
+// has replaced it.
 func inviteUser(inviterId int) (err error) {
 	user, err := GetUserById(inviterId, true)
 	if err != nil {
@@ -418,17 +426,6 @@ func (user *User) Insert(inviterId int) error {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
 	return nil
 }
 
@@ -445,6 +442,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	}
 	user.Quota = common.QuotaForNewUser
 	user.AffCode = common.GetRandomString(4)
+	user.InviterId = inviterId
 
 	// 初始化用户设置
 	if user.Setting == "" {
@@ -478,16 +476,6 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
-	}
-	if inviterId != 0 {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
 	}
 }
 

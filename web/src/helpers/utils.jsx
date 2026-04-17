@@ -46,6 +46,20 @@ export function isRoot() {
   return user.role >= 100;
 }
 
+export function isKol() {
+  let user = localStorage.getItem('user');
+  if (!user) return false;
+  user = JSON.parse(user);
+  return user.group === 'kol';
+}
+
+export function isReviewer() {
+  let user = localStorage.getItem('user');
+  if (!user) return false;
+  user = JSON.parse(user);
+  return user.group === 'reviewer' || user.role >= 100;
+}
+
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
   if (!system_name) return 'New API';

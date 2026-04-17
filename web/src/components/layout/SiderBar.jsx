@@ -25,7 +25,7 @@ import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
-import { isAdmin, isRoot, showError } from '../../helpers';
+import { isAdmin, isRoot, isKol, isReviewer, showError } from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
@@ -49,6 +49,8 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  kol: '/console/kol',
+  applications: '/console/applications',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -471,6 +473,44 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                   <div className='sidebar-group-label'>{t('个人中心')}</div>
                 )}
                 {financeItems.map((item) => renderNavItem(item))}
+              </div>
+            </>
+          )}
+
+          {/* 达人区域 - 只在 kol 分组用户时显示 */}
+          {isKol() && (
+            <>
+              <Divider className='sidebar-divider' />
+              <div>
+                {!collapsed && (
+                  <div className='sidebar-group-label'>{t('达人中心')}</div>
+                )}
+                {[
+                  {
+                    text: t('用户管理'),
+                    itemKey: 'kol',
+                    to: '/console/kol',
+                  },
+                ].map((item) => renderNavItem(item))}
+              </div>
+            </>
+          )}
+
+          {/* 审核中心 - reviewer 分组或超级管理员 */}
+          {isReviewer() && (
+            <>
+              <Divider className='sidebar-divider' />
+              <div>
+                {!collapsed && (
+                  <div className='sidebar-group-label'>{t('审核中心')}</div>
+                )}
+                {[
+                  {
+                    text: t('达人申请'),
+                    itemKey: 'applications',
+                    to: '/console/applications',
+                  },
+                ].map((item) => renderNavItem(item))}
               </div>
             </>
           )}

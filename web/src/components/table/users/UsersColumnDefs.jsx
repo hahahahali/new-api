@@ -177,6 +177,11 @@ const renderInviteInfo = (text, record, t) => {
   return (
     <div>
       <Space spacing={1}>
+        {record.group === 'kol' && record.aff_code && (
+          <Tag color='purple' shape='circle' className='!text-xs'>
+            {t('邀请码')}: {record.aff_code}
+          </Tag>
+        )}
         <Tag color='white' shape='circle' className='!text-xs'>
           {t('邀请')}: {renderNumber(record.aff_count)}
         </Tag>
@@ -209,6 +214,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    showEditAffCodeModal,
     t,
   },
 ) => {
@@ -222,6 +228,16 @@ const renderOperations = (
       name: t('订阅管理'),
       onClick: () => showUserSubscriptionsModal(record),
     },
+    ...(record.group === 'kol'
+      ? [
+          { node: 'divider' },
+          {
+            node: 'item',
+            name: t('修改邀请码'),
+            onClick: () => showEditAffCodeModal(record),
+          },
+        ]
+      : []),
     {
       node: 'divider',
     },
@@ -309,6 +325,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  showEditAffCodeModal,
 }) => {
   return [
     {
@@ -366,6 +383,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          showEditAffCodeModal,
           t,
         }),
     },
