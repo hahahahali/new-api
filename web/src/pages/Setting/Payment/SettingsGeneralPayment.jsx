@@ -55,6 +55,7 @@ export default function SettingsGeneralPayment(props) {
         AmountOptions: props.options.AmountOptions || '',
         AmountDiscount: props.options.AmountDiscount || '',
         AmountOptionNames: props.options.AmountOptionNames || '',
+        AmountOptionDescs: props.options.AmountOptionDescs || '',
       };
       setInputs(currentInputs);
       setOriginInputs({ ...currentInputs });
