@@ -1,6 +1,8 @@
 package model
 
 import (
+	"errors"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -13,20 +15,22 @@ const (
 )
 
 type AffiliateApplication struct {
-	Id             int    `json:"id"`
-	Name           string `json:"name" gorm:"type:varchar(64);not null"`
-	Email          string `json:"email" gorm:"type:varchar(128);not null;uniqueIndex"`
-	Country        string `json:"country" gorm:"type:varchar(64)"`
-	Phone          string `json:"phone" gorm:"type:varchar(32)"`
-	Instagram      string `json:"instagram" gorm:"type:varchar(128)"`
-	Tiktok         string `json:"tiktok" gorm:"type:varchar(128)"`
-	Youtube        string `json:"youtube" gorm:"type:varchar(256)"`
-	OtherSocial    string `json:"other_social" gorm:"type:varchar(256)"`
-	Status         string `json:"status" gorm:"type:varchar(16);default:'pending';index"`
+	Id             int     `json:"id"`
+	Name           string  `json:"name" gorm:"type:varchar(64);not null"`
+	Email          string  `json:"email" gorm:"type:varchar(128);not null;uniqueIndex"`
+	Country        string  `json:"country" gorm:"type:varchar(64)"`
+	Phone          string  `json:"phone" gorm:"type:varchar(32)"`
+	Instagram      string  `json:"instagram" gorm:"type:varchar(128)"`
+	Tiktok         string  `json:"tiktok" gorm:"type:varchar(128)"`
+	Youtube        string  `json:"youtube" gorm:"type:varchar(256)"`
+	OtherSocial    string  `json:"other_social" gorm:"type:varchar(256)"`
+	Lang           string  `json:"lang" gorm:"type:varchar(8);default:'en'"`
+	Status         string  `json:"status" gorm:"type:varchar(16);default:'pending';index"`
+	RejectReason   string  `json:"reject_reason,omitempty" gorm:"type:varchar(512);default:''"`
 	KolInviteToken *string `json:"kol_invite_token,omitempty" gorm:"type:varchar(64);uniqueIndex"`
-	TokenUsed      bool   `json:"token_used" gorm:"default:false"`
-	CreatedAt      int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt      int64  `json:"updated_at" gorm:"bigint"`
+	TokenUsed      bool    `json:"token_used" gorm:"default:false"`
+	CreatedAt      int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt      int64   `json:"updated_at" gorm:"bigint"`
 }
 
 func (a *AffiliateApplication) BeforeCreate(tx *gorm.DB) error {
@@ -112,17 +116,22 @@ func ApproveApplication(id int) (*AffiliateApplication, error) {
 	return &app, nil
 }
 
-// RejectApplication transitions a pending application to rejected.
-func RejectApplication(id int) error {
+// RejectApplication transitions a pending application to rejected with an optional reason.
+// Returns the updated application so the caller can send a notification email.
+func RejectApplication(id int, reason string) (*AffiliateApplication, error) {
 	var app AffiliateApplication
 	if err := DB.First(&app, id).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if app.Status != AffiliateStatusPending {
-		return ErrAffiliateNotPending
+		return nil, ErrAffiliateNotPending
 	}
 	app.Status = AffiliateStatusRejected
-	return DB.Save(&app).Error
+	app.RejectReason = reason
+	if err := DB.Save(&app).Error; err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 // GetApplicationByToken returns the application for a given KOL invite token, or nil if not found.
@@ -135,6 +144,34 @@ func GetApplicationByToken(token string) (*AffiliateApplication, error) {
 	return &app, err
 }
 
+// ConsumeKolInviteToken promotes the user to the kol group and atomically marks
+// the invite token as used. Exactly one caller can successfully consume a token.
+func ConsumeKolInviteToken(token string, userId int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&AffiliateApplication{}).
+			Where("kol_invite_token = ? AND status = ? AND token_used = ?", token, AffiliateStatusApproved, false).
+			Update("token_used", true)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrAffiliateInviteTokenUnavailable
+		}
+
+		userResult := tx.Model(&User{}).
+			Where("id = ?", userId).
+			Update("group", "kol")
+		if userResult.Error != nil {
+			return userResult.Error
+		}
+		if userResult.RowsAffected != 1 {
+			return errors.New("failed to promote user to kol")
+		}
+
+		return nil
+	})
+}
+
 // MarkTokenUsed marks the invite token as used.
 func MarkTokenUsed(token string) error {
 	return DB.Model(&AffiliateApplication{}).
@@ -143,14 +180,16 @@ func MarkTokenUsed(token string) error {
 }
 
 var (
-	ErrAffiliateAlreadyApproved error = gorm.ErrInvalidData
-	ErrAffiliateNotPending      error = gorm.ErrInvalidData
+	ErrAffiliateAlreadyApproved        error = gorm.ErrInvalidData
+	ErrAffiliateNotPending             error = gorm.ErrInvalidData
+	ErrAffiliateInviteTokenUnavailable error = gorm.ErrInvalidData
 )
 
 func init() {
 	// Use distinct sentinel errors
 	ErrAffiliateAlreadyApproved = &affiliateError{"申请已通过审核，无法再次修改"}
-	ErrAffiliateNotPending      = &affiliateError{"申请状态不是 pending，无法操作"}
+	ErrAffiliateNotPending = &affiliateError{"申请状态不是 pending，无法操作"}
+	ErrAffiliateInviteTokenUnavailable = &affiliateError{"邀请链接无效或已被使用"}
 }
 
 type affiliateError struct {

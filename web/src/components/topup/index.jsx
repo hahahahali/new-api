@@ -83,6 +83,8 @@ const TopUp = () => {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [payMethods, setPayMethods] = useState([]);
+  const [stripeRebateRate, setStripeRebateRate] = useState(0);
+  const [stripeOriginalAmount, setStripeOriginalAmount] = useState(0);
 
   const affFetchedRef = useRef(false);
 
@@ -650,11 +652,15 @@ const TopUp = () => {
         amount: parseFloat(value),
       });
       if (res !== undefined) {
-        const { message, data } = res.data;
+        const { message, data, original, rebate_rate } = res.data;
         if (message === 'success') {
           setAmount(parseFloat(data));
+          setStripeRebateRate(parseFloat(rebate_rate) || 0);
+          setStripeOriginalAmount(parseFloat(original) || 0);
         } else {
           setAmount(0);
+          setStripeRebateRate(0);
+          setStripeOriginalAmount(0);
           Toast.error({ content: '错误：' + data, id: 'getAmount' });
         }
       } else {
@@ -742,6 +748,8 @@ const TopUp = () => {
         payMethods={payMethods}
         amountNumber={amount}
         discountRate={topupInfo?.discount?.[topUpCount] || 1.0}
+        stripeRebateRate={stripeRebateRate}
+        stripeOriginalAmount={stripeOriginalAmount}
       />
 
       {/* 充值账单模态框 */}

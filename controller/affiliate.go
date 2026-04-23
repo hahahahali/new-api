@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -12,32 +13,88 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const affiliateEmailVerifyPurpose = "affiliate_ev"
+
+func affiliateVerifyRedisKey(email string) string {
+	return "affiliate_email_verify:" + email
+}
+
+// checkAffiliateEmailCode checks the stored code without consuming it.
+func checkAffiliateEmailCode(email, code string) bool {
+	if common.RedisEnabled {
+		stored, err := common.RedisGet(affiliateVerifyRedisKey(email))
+		return err == nil && stored == code
+	}
+	return common.VerifyCodeWithKey(email, code, affiliateEmailVerifyPurpose)
+}
+
+// consumeAffiliateEmailCode deletes the code so it cannot be reused.
+func consumeAffiliateEmailCode(email string) {
+	if common.RedisEnabled {
+		_ = common.RedisDel(affiliateVerifyRedisKey(email))
+	} else {
+		common.DeleteKey(email, affiliateEmailVerifyPurpose)
+	}
+}
+
 // SubmitAffiliateApplication handles POST /api/affiliate/apply (public, no auth).
 func SubmitAffiliateApplication(c *gin.Context) {
-	var app model.AffiliateApplication
-	if err := c.ShouldBindJSON(&app); err != nil {
+	var req struct {
+		Name        string `json:"name"`
+		Email       string `json:"email"`
+		Phone       string `json:"phone"`
+		Country     string `json:"country"`
+		Instagram   string `json:"instagram"`
+		Tiktok      string `json:"tiktok"`
+		Youtube     string `json:"youtube"`
+		OtherSocial string `json:"other_social"`
+		VerifyCode  string `json:"verify_code"`
+		Lang        string `json:"lang"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的请求参数"})
 		return
 	}
-	app.Name = strings.TrimSpace(app.Name)
-	app.Email = strings.TrimSpace(app.Email)
-	app.Instagram = strings.TrimSpace(app.Instagram)
-	app.Tiktok = strings.TrimSpace(app.Tiktok)
-	app.Youtube = strings.TrimSpace(app.Youtube)
-	app.OtherSocial = strings.TrimSpace(app.OtherSocial)
-	if app.Name == "" || app.Email == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Instagram = strings.TrimSpace(req.Instagram)
+	req.Tiktok = strings.TrimSpace(req.Tiktok)
+	req.Youtube = strings.TrimSpace(req.Youtube)
+	req.OtherSocial = strings.TrimSpace(req.OtherSocial)
+	req.VerifyCode = strings.TrimSpace(req.VerifyCode)
+	if req.Name == "" || req.Email == "" {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "姓名和邮箱不能为空"})
 		return
 	}
-	if err := common.Validate.Var(app.Email, "required,email"); err != nil {
+	if err := common.Validate.Var(req.Email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "邮箱格式不正确"})
 		return
 	}
-	if app.Instagram == "" && app.Tiktok == "" && app.Youtube == "" && app.OtherSocial == "" {
+	if req.Instagram == "" && req.Tiktok == "" && req.Youtube == "" && req.OtherSocial == "" {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请至少填写一个社交账号"})
 		return
 	}
+	if req.VerifyCode == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先获取并填写邮箱验证码"})
+		return
+	}
+	if !checkAffiliateEmailCode(req.Email, req.VerifyCode) {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "验证码错误或已过期，请重新获取"})
+		return
+	}
+	consumeAffiliateEmailCode(req.Email)
 
+	app := model.AffiliateApplication{
+		Name:        req.Name,
+		Email:       req.Email,
+		Phone:       req.Phone,
+		Country:     req.Country,
+		Instagram:   req.Instagram,
+		Tiktok:      req.Tiktok,
+		Youtube:     req.Youtube,
+		OtherSocial: req.OtherSocial,
+		Lang:        req.Lang,
+	}
 	if err := model.CreateOrUpdateApplication(&app); err != nil {
 		if err == model.ErrAffiliateAlreadyApproved {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "您的申请已通过审核，请查收邮件"})
@@ -49,14 +106,32 @@ func SubmitAffiliateApplication(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "申请已提交"})
 }
 
-// GetAffiliateApplicationStatus handles GET /api/affiliate/apply?email=xxx (public, no auth).
+// GetAffiliateApplicationStatus handles POST /api/affiliate/status (public, email verification required).
 func GetAffiliateApplicationStatus(c *gin.Context) {
-	email := strings.TrimSpace(c.Query("email"))
-	if email == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "缺少邮箱参数"})
+	var req struct {
+		Email      string `json:"email"`
+		VerifyCode string `json:"verify_code"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的请求参数"})
 		return
 	}
-	app, err := model.GetApplicationByEmail(email)
+	req.Email = strings.TrimSpace(req.Email)
+	req.VerifyCode = strings.TrimSpace(req.VerifyCode)
+	if req.Email == "" || req.VerifyCode == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先完成邮箱验证"})
+		return
+	}
+	if err := common.Validate.Var(req.Email, "required,email"); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "邮箱格式不正确"})
+		return
+	}
+	if !checkAffiliateEmailCode(req.Email, req.VerifyCode) {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "验证码错误或已过期，请重新获取"})
+		return
+	}
+
+	app, err := model.GetApplicationByEmail(req.Email)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -65,11 +140,18 @@ func GetAffiliateApplicationStatus(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": nil})
 		return
 	}
-	// Return only status — never expose personal data to unauthenticated callers
+	// Email ownership verified — safe to return the applicant's own data
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"status": app.Status,
+			"status":       app.Status,
+			"name":         app.Name,
+			"phone":        app.Phone,
+			"country":      app.Country,
+			"instagram":    app.Instagram,
+			"tiktok":       app.Tiktok,
+			"youtube":      app.Youtube,
+			"other_social": app.OtherSocial,
 		},
 	})
 }
@@ -127,7 +209,14 @@ func RejectAffiliateApplication(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
 		return
 	}
-	if err := model.RejectApplication(id); err != nil {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	// Ignore parse error — reason is optional
+	_ = c.ShouldBindJSON(&body)
+
+	app, err := model.RejectApplication(id, body.Reason)
+	if err != nil {
 		if err == model.ErrAffiliateNotPending {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "该申请不处于待审核状态"})
 			return
@@ -135,7 +224,10 @@ func RejectAffiliateApplication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已拒绝申请"})
+
+	go sendAffiliateRejectionEmail(app)
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已拒绝申请，通知邮件已发送"})
 }
 
 func sendAffiliateApprovalEmail(app *model.AffiliateApplication) {
@@ -144,16 +236,56 @@ func sendAffiliateApprovalEmail(app *model.AffiliateApplication) {
 	}
 	serverAddr := strings.TrimRight(system_setting.ServerAddress, "/")
 	link := fmt.Sprintf("%s/register?kol_token=%s", serverAddr, *app.KolInviteToken)
-	subject := fmt.Sprintf("【%s】您的达人合作申请已通过", common.SystemName)
-	content := fmt.Sprintf(`<p>您好 %s，</p>
-<p>恭喜！您申请加入 <strong>%s</strong> 达人计划已通过审核。</p>
-<p>请点击以下链接完成注册，注册后您将自动加入达人分组并获得专属佣金功能：</p>
-<p><a href="%s">%s</a></p>
-<p>如果链接无法点击，请将以下地址复制到浏览器打开：<br>%s</p>
-<p><strong>注意：该链接为一次性链接，仅可使用一次。</strong></p>
-<p>如有疑问请联系我们。</p>`,
-		app.Name, common.SystemName, link, link, link)
+	subject, content := common.BuildAffiliateApprovalEmail(app.Lang, app.Name, common.SystemName, link)
 	if err := common.SendEmail(subject, app.Email, content); err != nil {
 		common.SysError(fmt.Sprintf("failed to send affiliate approval email to %s: %v", app.Email, err))
+	}
+}
+
+func sendAffiliateRejectionEmail(app *model.AffiliateApplication) {
+	subject, content := common.BuildAffiliateRejectionEmail(app.Lang, app.Name, common.SystemName, app.RejectReason)
+	if err := common.SendEmail(subject, app.Email, content); err != nil {
+		common.SysError(fmt.Sprintf("failed to send affiliate rejection email to %s: %v", app.Email, err))
+	}
+}
+
+// SendAffiliateEmailCode handles POST /api/affiliate/send-email-code (public, rate-limited).
+func SendAffiliateEmailCode(c *gin.Context) {
+	var req struct {
+		Email string `json:"email"`
+		Lang  string `json:"lang"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的请求参数"})
+		return
+	}
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "邮箱不能为空"})
+		return
+	}
+	if err := common.Validate.Var(email, "required,email"); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "邮箱格式不正确"})
+		return
+	}
+
+	code := fmt.Sprintf("%06d", common.GetRandomInt(1000000))
+	if common.RedisEnabled {
+		if err := common.RedisSet(affiliateVerifyRedisKey(email), code, 10*time.Minute); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "服务暂时不可用，请稍后重试"})
+			return
+		}
+	} else {
+		common.RegisterVerificationCodeWithKey(email, code, affiliateEmailVerifyPurpose)
+	}
+
+	go sendAffiliateVerificationCodeEmail(email, code, req.Lang)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证码已发送，有效期 10 分钟"})
+}
+
+func sendAffiliateVerificationCodeEmail(email, code, lang string) {
+	subject, content := common.BuildAffiliateVerificationEmail(lang, common.SystemName, code)
+	if err := common.SendEmail(subject, email, content); err != nil {
+		common.SysError(fmt.Sprintf("failed to send affiliate verification code to %s: %v", email, err))
 	}
 }

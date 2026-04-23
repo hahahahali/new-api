@@ -42,7 +42,6 @@ export default function SettingsPaymentGateway(props) {
   const [inputs, setInputs] = useState({
     StripeApiSecret: '',
     StripeWebhookSecret: '',
-    StripePriceId: '',
     StripeUnitPrice: 8.0,
     StripeMinTopUp: 1,
     StripePromotionCodesEnabled: false,
@@ -55,7 +54,6 @@ export default function SettingsPaymentGateway(props) {
       const currentInputs = {
         StripeApiSecret: props.options.StripeApiSecret || '',
         StripeWebhookSecret: props.options.StripeWebhookSecret || '',
-        StripePriceId: props.options.StripePriceId || '',
         StripeUnitPrice:
           props.options.StripeUnitPrice !== undefined
             ? parseFloat(props.options.StripeUnitPrice)
@@ -97,9 +95,6 @@ export default function SettingsPaymentGateway(props) {
           key: 'StripeWebhookSecret',
           value: inputs.StripeWebhookSecret,
         });
-      }
-      if (inputs.StripePriceId !== '') {
-        options.push({ key: 'StripePriceId', value: inputs.StripePriceId });
       }
       if (
         inputs.StripeUnitPrice !== undefined &&
@@ -195,7 +190,7 @@ export default function SettingsPaymentGateway(props) {
             description={`需要包含事件：checkout.session.completed 和 checkout.session.expired`}
           />
           <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
+            <Col xs={24} sm={24} md={12} lg={12} xl={12}>
               <Form.Input
                 field='StripeApiSecret'
                 label={t('API 密钥')}
@@ -205,19 +200,12 @@ export default function SettingsPaymentGateway(props) {
                 type='password'
               />
             </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
+            <Col xs={24} sm={24} md={12} lg={12} xl={12}>
               <Form.Input
                 field='StripeWebhookSecret'
                 label={t('Webhook 签名密钥')}
                 placeholder={t('whsec_xxx 的 Webhook 签名密钥，敏感信息不显示')}
                 type='password'
-              />
-            </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='StripePriceId'
-                label={t('商品价格 ID')}
-                placeholder={t('price_xxx 的商品价格 ID，新建产品后可获得')}
               />
             </Col>
           </Row>

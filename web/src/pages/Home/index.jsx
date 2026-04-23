@@ -30,7 +30,6 @@ import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { API_ENDPOINTS } from '../../constants/common.constant';
 import { StatusContext } from '../../context/Status';
 import { useActualTheme } from '../../context/Theme';
-import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
 import {
   IconGithubLogo,
@@ -62,6 +61,7 @@ import {
   Hunyuan,
   Xinference,
 } from '@lobehub/icons';
+import { SafeHtml, renderMarkdownToSafeHtml } from '../../helpers/safeHtml';
 
 const { Text } = Typography;
 
@@ -88,7 +88,7 @@ const Home = () => {
     if (success) {
       let content = data;
       if (!data.startsWith('https://')) {
-        content = marked.parse(data);
+        content = renderMarkdownToSafeHtml(data);
       }
       setHomePageContent(content);
       localStorage.setItem('home_page_content', content);
@@ -342,10 +342,7 @@ const Home = () => {
               className='w-full h-screen border-none'
             />
           ) : (
-            <div
-              className='mt-[60px]'
-              dangerouslySetInnerHTML={{ __html: homePageContent }}
-            />
+            <SafeHtml className='mt-[60px]' html={homePageContent} />
           )}
         </div>
       )}

@@ -28,13 +28,13 @@ import {
 } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { API, showError, getRelativeTime } from '../../helpers';
-import { marked } from 'marked';
 import {
   IllustrationNoContent,
   IllustrationNoContentDark,
 } from '@douyinfe/semi-illustrations';
 import { StatusContext } from '../../context/Status';
 import { Bell, Megaphone } from 'lucide-react';
+import { SafeHtml, renderMarkdownToSafeHtml } from '../../helpers/safeHtml';
 
 const NoticeModal = ({
   visible,
@@ -89,7 +89,7 @@ const NoticeModal = ({
       const { success, message, data } = res.data;
       if (success) {
         if (data !== '') {
-          const htmlNotice = marked.parse(data);
+          const htmlNotice = renderMarkdownToSafeHtml(data);
           setNoticeContent(htmlNotice);
         } else {
           setNoticeContent('');
@@ -142,8 +142,8 @@ const NoticeModal = ({
     }
 
     return (
-      <div
-        dangerouslySetInnerHTML={{ __html: noticeContent }}
+      <SafeHtml
+        html={noticeContent}
         className='notice-content-scroll max-h-[55vh] overflow-y-auto pr-2'
       />
     );
@@ -170,8 +170,10 @@ const NoticeModal = ({
       <div className='max-h-[55vh] overflow-y-auto pr-2 card-content-scroll'>
         <Timeline mode='left'>
           {processedAnnouncements.map((item, idx) => {
-            const htmlContent = marked.parse(item.content || '');
-            const htmlExtra = item.extra ? marked.parse(item.extra) : '';
+            const htmlContent = renderMarkdownToSafeHtml(item.content || '');
+            const htmlExtra = item.extra
+              ? renderMarkdownToSafeHtml(item.extra)
+              : '';
             return (
               <Timeline.Item
                 key={idx}
@@ -179,20 +181,18 @@ const NoticeModal = ({
                 time={`${item.relative ? item.relative + ' ' : ''}${item.time}`}
                 extra={
                   item.extra ? (
-                    <div
+                    <SafeHtml
                       className='text-xs text-gray-500'
-                      dangerouslySetInnerHTML={{ __html: htmlExtra }}
+                      html={htmlExtra}
                     />
                   ) : null
                 }
                 className={item.isUnread ? '' : ''}
               >
-                <div>
-                  <div
-                    className={item.isUnread ? 'shine-text' : ''}
-                    dangerouslySetInnerHTML={{ __html: htmlContent }}
-                  />
-                </div>
+                <SafeHtml
+                  className={item.isUnread ? 'shine-text' : ''}
+                  html={htmlContent}
+                />
               </Timeline.Item>
             );
           })}

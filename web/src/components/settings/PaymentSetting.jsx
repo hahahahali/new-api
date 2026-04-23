@@ -44,7 +44,6 @@ const PaymentSetting = () => {
 
     StripeApiSecret: '',
     StripeWebhookSecret: '',
-    StripePriceId: '',
     StripeUnitPrice: 8.0,
     StripeMinTopUp: 1,
     StripePromotionCodesEnabled: false,

@@ -21,7 +21,7 @@ import React, { lazy, Suspense, useContext, useMemo } from 'react';
 import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute, KolRoute, ReviewerRoute } from './helpers';
+import { AuthRedirect, PrivateRoute, AdminRoute, KolRoute, ReviewerRoute, RootRoute } from './helpers';
 import RegisterForm from './components/auth/RegisterForm';
 import LoginForm from './components/auth/LoginForm';
 import NotFound from './pages/NotFound';
@@ -47,6 +47,7 @@ import Playground from './pages/Playground';
 import Subscription from './pages/Subscription';
 import KolDashboard from './pages/KolDashboard';
 import AffiliateReview from './pages/AffiliateReview';
+import WithdrawalAdmin from './pages/WithdrawalAdmin';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
@@ -131,6 +132,14 @@ function App() {
             <KolRoute>
               <KolDashboard />
             </KolRoute>
+          }
+        />
+        <Route
+          path='/console/withdrawals'
+          element={
+            <RootRoute>
+              <WithdrawalAdmin />
+            </RootRoute>
           }
         />
         <Route

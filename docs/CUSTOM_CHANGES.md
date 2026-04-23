@@ -12,16 +12,18 @@
 |---|---|
 | `controller/affiliate.go` | 达人申请公开接口 + 审核中心接口（ReviewerOrRootAuth 保护） |
 | `controller/kol.go` | KOL 达人仪表盘、提现申请、Stripe Connect 入驻 |
-| `controller/kol_admin.go` | 管理员：修改 aff_code、查看提现列表、Stripe 打款重试 |
+| `controller/kol_admin.go` | 管理员：修改 aff_code、查看提现列表、确认 PayPal 打款 |
 | `model/affiliate_application.go` | AffiliateApplication 数据模型（申请状态机、token 一次性使用） |
 | `model/commission.go` | CommissionRecord 数据模型（佣金记录、汇总查询） |
 | `model/withdrawal.go` | WithdrawalRequest 数据模型（提现申请、余额原子扣减） |
 | `service/commission.go` | ProcessCommission（幂等）、StartCommissionSettleTask（定时冻结 → 可提现） |
-| `service/withdrawal.go` | CreateWithdrawalTransfer — Stripe Connect 打款封装 |
-| `setting/payment_commission.go` | KolCommissionRate、StripeConnectEnabled、MinWithdrawalAmount 配置变量 |
+| `service/withdrawal.go` | CreateWithdrawalTransfer — Stripe Connect 打款封装（已停用，保留注释） |
+| `setting/payment_commission.go` | KolCommissionRate=0.20、StripeConnectEnabled=false、MinWithdrawalAmount=5.0 |
 | `setting/payment_stripe_connect.go` | StripeConnectClientId 配置变量 |
+| `common/email_templates.go` | 4类多语言邮件模板（zh/en/ja/fr/es）：验证码、审核通过、审核拒绝、打款通知 |
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
+| `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
 
 ---
 
@@ -31,7 +33,14 @@
 
 - `KolAuth()` — 检查 `user.group == "kol"`，需在 `UserAuth()` 之后使用
 - `ReviewerOrRootAuth()` — 允许 `reviewer` 分组或 `role >= RoleRootUser`，管理员（role=10）无权限
-- **`middleware/auth.go` 未被修改**，两个函数已提取到独立文件，与上游零冲突。
+
+---
+
+### `middleware/auth.go`
+
+- **改动**：`authHelper()` 对 session 登录态新增当前用户回源校验，不再仅信任 cookie 中缓存的 `role/status/group/username`；被降权、换组或禁用后的旧 session 将在服务端立即失效。
+- **改动**：`TokenOrUserAuth()` 的 session 分支同样改为读取当前用户状态，避免禁用用户继续通过旧会话访问混合鉴权接口。
+- **风险点**：上游若修改 `authHelper()` 或 `TokenOrUserAuth()`，同步时需保留“session 登录态使用当前 DB 状态”的逻辑，不能回退为仅信任 session 缓存字段。
 
 ---
 
@@ -45,6 +54,11 @@
   StripeConnectAccountId string  `gorm:"type:varchar(128);default:'';column:stripe_connect_account_id"`
   StripeConnectOnboarded bool    `gorm:"default:false;column:stripe_connect_onboarded"`
   ```
+- **改动 2**：新增 `Lang` 字段（用于多语言邮件通知）：
+  ```go
+  Lang string `gorm:"type:varchar(8);default:'en';column:lang"`
+  ```
+  来源：用户通过 kol_token 注册时，从 AffiliateApplication.Lang 复制过来。
 - **改动**：`Insert()` 和 `FinalizeOAuthUserCreation()` 中删除了原有的 `QuotaForInvitee` / `QuotaForInviter` 奖励逻辑（改为 KOL 佣金系统接管，按充值额计算佣金，原"注册赠送 quota"流程已停用）。`inviteUser()` 函数保留但不再调用。
 - **⚠️ 风险点（同步必查）**：
   1. 上游若修改 `Insert()` 或 `FinalizeOAuthUserCreation()` 中的邀请逻辑，需确认我们的 KOL 分支仍完整。
@@ -58,10 +72,10 @@
 - **改动 2**：`migrateDB()` 和 `migrateDBFast()` 中为 MySQL/PostgreSQL 路径追加：
   - `CommissionRecord`、`WithdrawalRequest`、`AffiliateApplication` 的 AutoMigrate
 - **改动 3**：新增 4 个 SQLite 安全迁移函数：
-  - `ensureUserTableSQLite()` — users 表新增列
+  - `ensureUserTableSQLite()` — users 表新增列（含 `lang`）
   - `ensureCommissionRecordTableSQLite()`
   - `ensureWithdrawalRequestTableSQLite()`
-  - `ensureAffiliateApplicationTableSQLite()`
+  - `ensureAffiliateApplicationTableSQLite()` — affiliate_applications 表新增列（含 `lang`）
 - **⚠️ 风险点（同步必查）**：SQLite User 迁移是本项目最危险的改动，**绝对不能将 `&User{}` 重新加入 SQLite 的 AutoMigrate 列表**。
 
 ---
@@ -69,7 +83,8 @@
 ### `model/option.go`
 
 - **位置**：`InitOptionMap()` 和 `UpdateOption()` 的 switch-case
-- **改动**：注册 4 个 KOL 配置键：`KolCommissionRate`、`StripeConnectEnabled`、`MinWithdrawalAmount`、`StripeConnectClientId`
+- **改动 1**：注册 4 个 KOL 配置键：`KolCommissionRate`、`StripeConnectEnabled`、`MinWithdrawalAmount`、`StripeConnectClientId`
+- **改动 2**：删除全局 `StripePriceId` 的 `InitOptionMap` 初始化和 `UpdateOption` case（checkout 改用 `price_data` 动态定价后不再需要）
 - **风险点**：上游若改动同一区域的 `UpdateOption` switch 可能冲突；同步时检查新增 case 是否重名。
 
 ---
@@ -77,10 +92,32 @@
 ### `controller/user.go`
 
 - **改动 1**：`Register()` 函数中：
-  - 仅接受 `group == "kol"` 用户的邀请码（非 KOL 邀请人的 inviterId 被置零）
+  - 仅接受 `group == “kol”` 用户的邀请码（非 KOL 邀请人的 inviterId 被置零）
   - 处理 URL 参数 `kol_token`，调用 `applyKolInviteToken()`（非致命失败，仅 SysLog）
-- **改动 2**：新增 `applyKolInviteToken()` 私有函数
-- **风险点**：上游若修改 `Register()` 的注册流程（如 inviter 处理逻辑），需确认 KOL 过滤和 kol_token 处理仍在正确位置。
+- **改动 2**：新增 `applyKolInviteToken()` 私有函数，委托 `model.ConsumeKolInviteToken()` 以事务方式原子完成”一次性 token 消耗 + 用户升级为 kol”；同时从 AffiliateApplication 复制 `lang` 字段到新注册用户，用于后续多语言邮件通知
+- **规则收口**：文件内 9 处直接调用的 `encoding/json`（`json.NewDecoder().Decode`、`json.Marshal`、`json.Unmarshal`）已全部替换为 `common.DecodeJson` / `common.Marshal` / `common.Unmarshal`；`encoding/json` import 已移除。
+- **风险点**：上游若修改 `Register()` 的注册流程（如 inviter 处理逻辑），需确认 KOL 过滤和 kol_token 处理仍在正确位置，且不要回退为”先查 token，再分步更新 user/group 与 token_used”的非原子写法。
+
+---
+
+### `model/affiliate_application.go`
+
+- **改动 1**：新增 `ConsumeKolInviteToken()`，通过 GORM 事务和条件更新实现 `kol_invite_token` 的原子消费：
+  - 仅允许 `status = approved && token_used = false` 的记录被成功消费一次
+  - 在同一事务中同时更新 `affiliate_applications.token_used = true` 和 `users.group = 'kol'`
+- **改动 2**：新增 `Lang varchar(8)` 字段（`default:'en'`），存储申请人提交时的界面语言；注册成功后复制到 User.Lang 用于邮件语言判断。
+- **规则收口**：`GetSetting()` / `SetSetting()` / `GetUserDefaultConfig()` 中直接调用的 `encoding/json` 已替换为 `common.Unmarshal` / `common.Marshal`；`encoding/json` import 已移除。
+- **风险点**：上游若修改 affiliate 申请模型或 token 字段语义，需保留”条件更新抢占 + 同事务内升级用户分组”的约束，不能拆回两次独立写入。
+
+---
+
+### `controller/affiliate.go`
+
+- **改动 1**：达人申请提交现在要求邮箱验证码；验证码校验通过后才允许创建或更新申请记录。
+- **改动 2**：状态查询接口已从公开 `GET /api/affiliate/apply?email=...` 收口为 `POST /api/affiliate/status`，必须同时提交 `email + verify_code` 才能查询该邮箱的申请状态；查询只校验验证码，不消费验证码，真正提交申请时才消费。
+- **改动 3**：`GetAffiliateApplicationStatus` 在邮箱验证码校验通过后，额外返回申请人自己填写的完整信息（`name/phone/country/instagram/tiktok/youtube/other_social`），用于前端回填表单。因为调用方已通过验证码证明邮箱归属，此处暴露自身数据是安全且合理的。
+- **改动 4**：申请提交和发验证码接口均接收 `lang` 字段；三个邮件发送函数改用 `common.BuildXxxEmail()` 多语言模板。
+- **风险点**：上游若修改达人申请控制器或邮箱验证码逻辑，需保留”状态查询必须依赖邮箱验证码”的约束，不能恢复为仅凭邮箱公开查询状态。
 
 ---
 
@@ -91,10 +128,31 @@
 
 ---
 
+### `model/topup.go`
+
+- **位置**：`TopUp` struct 字段定义
+- **改动**：新增 `OriginalMoney float64` 字段（`gorm:"default:0"`），存储折扣前原价（USD），供 ProcessCommission 计算净佣金使用。
+- **迁移说明**：`TopUp` 表保留在所有数据库路径的 `AutoMigrate` 列表中，新列会自动添加，无需手工 `ALTER TABLE`。
+- **⚠️ 风险点（同步必查）**：上游若修改 TopUp struct（如新增字段或修改类型），确认 OriginalMoney 字段仍存在且顺序无冲突。
+
+---
+
 ### `controller/topup.go` / `controller/topup_creem.go` / `controller/topup_stripe.go` / `controller/topup_waffo.go`
 
-- **改动**：每个支付回调成功后调用 `service.ProcessCommission(userId, tradeNo, amount)`（幂等，失败仅记日志）。
-- **风险点**：上游若新增支付渠道或修改回调流程，需确认 ProcessCommission 钩子仍被调用。
+- **改动 1**：每个支付回调成功后调用 `service.ProcessCommission(userId, tradeNo, paidUSD)` 3 参数版本（幂等，失败仅记日志）。折扣前原价由 `ProcessCommission` 内部按 `tradeNo` 反查 `TopUp.OriginalMoney` 获得，**调用方无需传 OriginalMoney**，最小化与上游 topup*.go 的 merge 冲突面。
+- **改动 2**（仅 `topup_stripe.go`）：
+  - **保留上游 `genStripeLink(amount int64, ...)` 函数体不动**（含其使用的 `setting.StripePriceId`），仅作为上游兼容存根存在。
+  - **新增并列函数 `genStripeLinkPriceData(payMoney float64, ...)`**：基于 Stripe `price_data` 的动态定价实现（`UnitAmount = payMoney × 100` 分），用于 KOL 推荐折扣 + 阶梯定价场景下每笔订单金额都不同的需求。
+  - `RequestPay` 的 `payLink` 调用从 `genStripeLink` 改为 `genStripeLinkPriceData`，并叠加 KOL 推荐折扣率（`GetKolRebateForUser`），将 `OriginalMoney`（未折扣金额）写入 TopUp 记录，供 ProcessCommission 内部读取。
+  - `RequestAmount` 同步返回 `original`（原价）和 `rebate_rate`（KOL 推荐折扣率）字段。
+  - **解耦原则**：保留上游 `genStripeLink` 完整签名与函数体，意味着上游对该函数的任何修改（bug fix、Stripe SDK 升级）都能 merge 干净；我们的实现走完全独立的 `genStripeLinkPriceData`，互不影响。
+- **改动 3**：`topup.go` / `topup_stripe.go` 创建充值订单时，改为通过 `service.CreatePendingTopUpWithKolRebate()` 在事务内先锁定 invitee、按”已成功佣金单 + 当前 pending 充值单”计算推荐折扣资格，再落 pending 订单，堵住并发/提前下单绕过”前 3 单折扣”限制的问题；若拉起支付失败则立即将该 pending 订单标记为 `failed` 释放名额。
+- **改动 4**（仅 `topup.go`）：新增 `GetPublicTopupPackages()` — 无需鉴权的充值套餐接口，供落地页未登录访客查看实时定价。使用 `getStripePayMoney(amount, “default”)` 计算标准价格（不含 KOL 折扣），仅返回最终价格，不暴露折扣表、StripeUnitPrice 等内部配置；Stripe 未配置时返回错误。
+- **风险点**：
+  - 上游若新增支付渠道或修改回调流程，只需在成功分支加一行 3 参数调用即可接入佣金系统。
+  - 上游若修改 `RequestPay` / `RequestEpay` 的下单顺序，需保留”折扣资格判断与 pending 订单创建在同一事务内完成”的约束，不能回退为先查资格、后单独插入订单。
+  - `topup.go` 中 `enable_stripe_topup` 检查已去除 `StripePriceId` 依赖，仅校验 `StripeApiSecret` + `StripeWebhookSecret`。`model/option.go` 已删除 `StripePriceId` 的 InitOptionMap/UpdateOption 注册，前端设置页（`SettingsPaymentGatewayStripe.jsx`、`PaymentSetting.jsx`）也删除了输入字段。**`setting/payment_stripe.go` 中 `var StripePriceId = ""` 已恢复并保留**——仅作为编译兼容存根存在，让上游 `genStripeLink` 函数体能编译通过；运行时该变量始终为空，我们的支付链路不依赖它。`model/subscription.go` 中各套餐自有的 `StripePriceId` 字段不受影响。
+  - 上游若修改 `getStripePayMoney` 签名或 `AmountOptions` 结构，`GetPublicTopupPackages` 需同步调整。
 
 ---
 
@@ -105,16 +163,44 @@
   - `POST /api/user/logout` — 同上
   - KOL 路由组 `/api/kol/*`（需 `UserAuth` + `KolAuth`）
   - KOL 管理路由组 `/api/kol/admin/*`（需 `AdminAuth`）
-  - 公开达人申请路由 `POST /api/affiliate/apply`、`GET /api/affiliate/apply`
+  - 公开达人申请路由 `POST /api/affiliate/apply`、`POST /api/affiliate/send-email-code`、`POST /api/affiliate/status`
   - 达人审核路由组 `/api/affiliate/*`（需 `UserAuth` + `ReviewerOrRootAuth`）
+  - **`GET /api/topup/packages`** — 公开充值套餐定价接口（无需登录，加 `CriticalRateLimit()`）
+- **改动**：为 `POST /api/user/topup/complete` 追加 `CriticalRateLimit()` + `SecureVerificationRequired()`。
 - **风险点**：上游若在 apiRouter 末尾追加路由，merge 冲突概率较低但需检查。
 
 ---
 
 ### `main.go`
 
-- **改动**：在 `main()` 初始化序列末尾追加 `service.StartCommissionSettleTask()`。
-- **风险点**：上游若在 main 末尾新增 goroutine/task 启动，需检查顺序是否合理。
+- **改动 1**：在 `main()` 初始化序列末尾追加 `service.StartCommissionSettleTask()`。
+- **改动 2**：session cookie 的 `Secure` 改为**按请求动态判定**：默认 `false`，每次请求根据 `TLS` / `X-Forwarded-Proto` / `Forwarded` 等协议头自动决定；仅在当前请求明确为 HTTPS（或 `SESSION_COOKIE_SECURE=true` 强制开启）时才下发 `Secure` cookie，避免 `ServerAddress=https://...` 但实际通过 `http://局域网IP:端口` 访问时浏览器丢弃登录 cookie，出现“登录成功后访问任意鉴权接口立刻掉线”。
+- **风险点**：
+  1. 上游若在 main 末尾新增 goroutine/task 启动，需检查顺序是否合理。
+  2. 上游若修改 session store 初始化，需保留“默认 `Secure=false` + 按请求动态覆盖”的逻辑，不能回退为固定 `Secure: false`，也不能恢复到“按 `ServerAddress` / release 模式一次性全局强开 Secure”的策略。
+
+---
+
+### `model/task_cas_test.go`（上游测试文件）
+
+- **改动**：`TestMain` 的 `db.AutoMigrate(...)` 列表尾部追加 `&AffiliateApplication{}`；`truncateTables` 的 `DB.Exec` 序列追加 `DELETE FROM affiliate_applications`。
+- **原因**：引入 `AffiliateApplication` 模型后，任务级 CAS 测试若不在测试库中注册该表，相关集成测试会因表缺失报错。
+- **风险点**：上游若修改该测试文件（例如新增/移除 AutoMigrate 的模型、重构 truncate 流程），merge 时需保留我们追加的 `&AffiliateApplication{}` 注册和对应 DELETE 语句；同步新模型时也要在这里同步追加。
+
+---
+
+### `service/task_billing_test.go`（上游测试文件）
+
+- **改动**：`TestMain` 的 `AutoMigrate(...)` 列表尾部追加 `&model.CommissionRecord{}` 和 `&model.TopUp{}`；`truncate` 的 `model.DB.Exec` 序列追加 `DELETE FROM commission_records` 与 `DELETE FROM top_ups`。
+- **原因**：KOL 佣金系统在任务计费路径上会查询 `commission_records` 与 `top_ups` 表，若测试库未建表则计费相关测试失败。
+- **风险点**：上游若修改该测试文件（如调整 AutoMigrate 列表或清理流程），merge 时必须保留两张表的注册与 DELETE 语句；后续若再新增与计费相关的模型，应在此处同步追加。
+
+---
+
+### `.gitignore`
+
+- **改动**：新增 `PROJECT_MASTER.md` 忽略规则，将本地联合开发统领文件排除在 git 之外，避免误提交本地开发/部署信息。
+- **风险点**：若上游后续修改根目录 `.gitignore`，同步时需保留 `PROJECT_MASTER.md` 的本地忽略规则。
 
 ---
 
@@ -123,14 +209,24 @@
 | 文件 | 改动摘要 |
 |---|---|
 | `web/src/App.jsx` | 新增 KolDashboard 路由、AffiliateApply 路由、AffiliateReview 路由 |
+| `web/src/helpers/safeHtml.jsx` | 新增 `sanitizeRichTextHtml` / `renderMarkdownToSafeHtml` / `SafeHtml`，统一收口富文本渲染的 XSS 面 |
 | `web/src/components/auth/RegisterForm.jsx` | 支持 `kol_token` URL 参数，注册时传递给后端 |
 | `web/src/components/layout/SiderBar.jsx` | 新增"达人中心"和"审核中心"菜单组（按 group/role 显示） |
+| `web/src/components/settings/PaymentSetting.jsx` | 删除 `StripePriceId` 初始 state |
 | `web/src/components/table/users/UsersColumnDefs.jsx` | 用户列表新增 KOL 字段列 |
 | `web/src/components/table/users/UsersTable.jsx` | 配合上述列变更 |
-| `web/src/components/topup/index.jsx` | 充值页面适配 |
+| `web/src/components/common/DocumentRenderer/index.jsx` | HTML 文档页不再直接注入原始 HTML，统一改为白名单清洗后的安全渲染 |
+| `web/src/components/dashboard/AnnouncementsPanel.jsx` / `web/src/components/dashboard/FaqPanel.jsx` / `web/src/components/layout/NoticeModal.jsx` | 公告/FAQ/通知的 `marked + dangerouslySetInnerHTML` 改为安全 HTML 渲染，阻断脚本注入 |
+| `web/src/pages/Home/index.jsx` / `web/src/pages/About/index.jsx` / `web/src/components/layout/Footer.jsx` / `web/src/components/settings/OtherSetting.jsx` / `web/src/helpers/utils.jsx` | 首页/关于/页脚/更新弹窗/HTML toast 全部切换到统一安全渲染器，保留富文本能力但移除危险标签、事件属性和不安全链接 |
+| `web/src/components/topup/index.jsx` | 新增 `stripeRebateRate` / `stripeOriginalAmount` state，从 `RequestAmount` 响应中解析并传入 `PaymentConfirmModal` |
+| `web/src/components/topup/modals/PaymentConfirmModal.jsx` | 新增 `stripeRebateRate` / `stripeOriginalAmount` props；当 `payWay === 'stripe'` 且存在推荐折扣时展示原价删除线 + "推荐折扣" Tag |
+| `web/src/components/table/users/modals/EditAffCodeModal.jsx` | 引入 `useSecureVerification`，修改达人邀请码（`PUT /api/kol/admin/users/:id/aff_code`）前强制触发二次身份校验 |
+| `web/src/components/topup/modals/TopupHistoryModal.jsx` | 引入 `useSecureVerification`，手动补单（`POST /api/user/topup/complete`）前强制触发二次身份校验 |
 | `web/src/helpers/auth.jsx` | 新增 `ReviewerRoute` 路由守卫 |
 | `web/src/helpers/utils.jsx` | 新增 `isReviewer()` 工具函数 |
-| `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key |
+| `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}` |
+| `web/src/pages/KolDashboard/index.jsx` | （新增文件）"返佣比例"卡片改为实时显示 `commission_rate * 100 - rebateRate`，随推荐折扣滑块联动更新，反映让利后的净佣金比例 |
+| `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key；补充"推荐折扣"、"推荐折扣已更新"及折扣说明/示例文案 key |
 
 ---
 

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Modal, Typography, Card, Skeleton } from '@douyinfe/semi-ui';
+import { Modal, Typography, Card, Skeleton, Tag } from '@douyinfe/semi-ui';
 import { SiAlipay, SiWechat, SiStripe } from 'react-icons/si';
 import { CreditCard } from 'lucide-react';
 
@@ -36,14 +36,19 @@ const PaymentConfirmModal = ({
   renderAmount,
   payWay,
   payMethods,
-  // 新增：用于显示折扣明细
+  // 用于显示阶梯折扣明细
   amountNumber,
   discountRate,
+  // 用于显示 KOL 推荐折扣
+  stripeRebateRate,
+  stripeOriginalAmount,
 }) => {
   const hasDiscount =
     discountRate && discountRate > 0 && discountRate < 1 && amountNumber > 0;
   const originalAmount = hasDiscount ? amountNumber / discountRate : 0;
   const discountAmount = hasDiscount ? originalAmount - amountNumber : 0;
+
+  const hasRebate = payWay === 'stripe' && stripeRebateRate > 0 && stripeOriginalAmount > 0;
   return (
     <Modal
       title={
@@ -90,6 +95,21 @@ const PaymentConfirmModal = ({
                 </div>
               )}
             </div>
+            {hasRebate && !amountLoading && (
+              <div className='flex justify-between items-center'>
+                <Text className='text-slate-500 dark:text-slate-400'>
+                  {t('原价')}：
+                </Text>
+                <div className='flex items-center space-x-2'>
+                  <Text delete className='text-slate-400 dark:text-slate-500'>
+                    ${stripeOriginalAmount.toFixed(2)}
+                  </Text>
+                  <Tag color='violet' size='small'>
+                    {t('推荐折扣')} -{Math.round(stripeRebateRate * 100)}%
+                  </Tag>
+                </div>
+              </div>
+            )}
             {hasDiscount && !amountLoading && (
               <>
                 <div className='flex justify-between items-center'>

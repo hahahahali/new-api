@@ -29,10 +29,10 @@ import {
   Card,
 } from '@douyinfe/semi-ui';
 import { API, showError, showSuccess, timestamp2string } from '../../helpers';
-import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
 import { StatusContext } from '../../context/Status';
 import Text from '@douyinfe/semi-ui/lib/es/typography/text';
+import { SafeHtml, renderMarkdownToSafeHtml } from '../../helpers/safeHtml';
 
 const LEGAL_USER_AGREEMENT_KEY = 'legal.user_agreement';
 const LEGAL_PRIVACY_POLICY_KEY = 'legal.privacy_policy';
@@ -264,7 +264,7 @@ const OtherSetting = () => {
       } else {
         setUpdateData({
           tag_name: tag_name,
-          content: marked.parse(body),
+          content: renderMarkdownToSafeHtml(body),
         });
         setShowUpdateModal(true);
       }
@@ -515,7 +515,7 @@ const OtherSetting = () => {
           </Button>,
         ]}
       >
-        <div dangerouslySetInnerHTML={{ __html: updateData.content }}></div>
+        <SafeHtml html={updateData.content} />
       </Modal>
     </Row>
   );

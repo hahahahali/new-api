@@ -31,6 +31,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.TryUserAuth(), controller.GetPricing)
+		apiRouter.GET("/topup/packages", middleware.CriticalRateLimit(), controller.GetPublicTopupPackages)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), controller.ResetPassword)
@@ -119,7 +120,7 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
-				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
+				adminRoute.POST("/topup/complete", middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), controller.AdminCompleteTopUp)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
@@ -179,23 +180,35 @@ func SetApiRouter(router *gin.Engine) {
 			kolRoute.GET("/invitees", controller.GetKolInvitees)
 			kolRoute.GET("/commissions", controller.GetKolCommissions)
 			kolRoute.GET("/withdrawals", controller.GetKolWithdrawals)
-			kolRoute.POST("/withdraw", controller.RequestKolWithdraw)
-			kolRoute.POST("/stripe-connect/onboard", controller.KolStripeConnectOnboard)
-			kolRoute.GET("/stripe-connect/status", controller.KolStripeConnectStatus)
+			kolRoute.POST("/withdraw", middleware.CriticalRateLimit(), controller.RequestKolWithdraw)
+			kolRoute.PUT("/rebate-rate", controller.SetKolRebateRate)
+			kolRoute.PUT("/aff_code", middleware.CriticalRateLimit(), controller.KolUpdateAffCode)
+			// [Stripe Connect - disabled]
+			// kolRoute.POST("/stripe-connect/onboard", controller.KolStripeConnectOnboard)
+			// kolRoute.GET("/stripe-connect/status", controller.KolStripeConnectStatus)
 		}
 
-		// KOL admin routes
+		// KOL admin routes (regular admin, role >= 10)
 		kolAdminRoute := apiRouter.Group("/kol/admin")
 		kolAdminRoute.Use(middleware.AdminAuth())
 		{
-			kolAdminRoute.PUT("/users/:id/aff_code", controller.AdminUpdateKolAffCode)
-			kolAdminRoute.GET("/withdrawals", controller.AdminGetAllWithdrawals)
-			kolAdminRoute.POST("/withdrawals/:id/reconcile-transfer", controller.AdminReconcileWithdrawalTransfer)
+			kolAdminRoute.PUT("/users/:id/aff_code", middleware.CriticalRateLimit(), controller.AdminUpdateKolAffCode)
+		}
+
+		// KOL withdrawal management (root only, role >= 100)
+		kolRootRoute := apiRouter.Group("/kol/admin")
+		kolRootRoute.Use(middleware.RootAuth())
+		{
+			kolRootRoute.GET("/withdrawals", controller.AdminGetAllWithdrawals)
+			kolRootRoute.POST("/withdrawals/:id/pay", middleware.CriticalRateLimit(), controller.AdminMarkWithdrawalPaid)
+			// [Stripe Connect - disabled]
+			// kolRootRoute.POST("/withdrawals/:id/reconcile-transfer", controller.AdminReconcileWithdrawalTransfer)
 		}
 
 		// Affiliate application (public, no auth)
 		apiRouter.POST("/affiliate/apply", controller.SubmitAffiliateApplication)
-		apiRouter.GET("/affiliate/apply", controller.GetAffiliateApplicationStatus)
+		apiRouter.POST("/affiliate/send-email-code", middleware.EmailVerificationRateLimit(), controller.SendAffiliateEmailCode)
+		apiRouter.POST("/affiliate/status", middleware.CriticalRateLimit(), controller.GetAffiliateApplicationStatus)
 
 		// Affiliate review (reviewer group + root)
 		affiliateReviewRoute := apiRouter.Group("/affiliate")

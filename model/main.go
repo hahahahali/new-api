@@ -468,8 +468,10 @@ func ensureUserTableSQLite() error {
 	required := []sqliteColumnDef{
 		{Name: "kol_balance", DDL: "`kol_balance` decimal(10,6) DEFAULT 0"},
 		{Name: "kol_history_balance", DDL: "`kol_history_balance` decimal(10,6) DEFAULT 0"},
+		{Name: "kol_rebate_rate", DDL: "`kol_rebate_rate` decimal(5,4) DEFAULT 0"},
 		{Name: "stripe_connect_account_id", DDL: "`stripe_connect_account_id` varchar(128) DEFAULT ''"},
 		{Name: "stripe_connect_onboarded", DDL: "`stripe_connect_onboarded` numeric DEFAULT false"},
+		{Name: "lang", DDL: "`lang` varchar(8) DEFAULT 'en'"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {
@@ -603,7 +605,10 @@ func ensureWithdrawalRequestTableSQLite() error {
 	}
 
 	required := []sqliteColumnDef{
-		{Name: "stripe_transfer_id", DDL: "`stripe_transfer_id` varchar(128) DEFAULT ''"},
+		// {Name: "stripe_transfer_id", DDL: "`stripe_transfer_id` varchar(128) DEFAULT ''"}, // [Stripe Connect - disabled]
+		{Name: "paypal_email", DDL: "`paypal_email` varchar(128) DEFAULT ''"},
+		{Name: "paypal_name", DDL: "`paypal_name` varchar(128) DEFAULT ''"},
+		{Name: "paypal_transaction_id", DDL: "`paypal_transaction_id` varchar(128) DEFAULT ''"},
 		{Name: "reject_reason", DDL: "`reject_reason` text"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "updated_at", DDL: "`updated_at` bigint"},
@@ -731,10 +736,12 @@ func ensureAffiliateApplicationTableSQLite() error {
 		{Name: "youtube", DDL: "`youtube` varchar(256) DEFAULT ''"},
 		{Name: "other_social", DDL: "`other_social` varchar(256) DEFAULT ''"},
 		{Name: "status", DDL: "`status` varchar(16) DEFAULT 'pending'"},
+		{Name: "reject_reason", DDL: "`reject_reason` varchar(512) DEFAULT ''"},
 		{Name: "kol_invite_token", DDL: "`kol_invite_token` varchar(64) DEFAULT ''"},
 		{Name: "token_used", DDL: "`token_used` numeric DEFAULT 0"},
 		{Name: "created_at", DDL: "`created_at` bigint DEFAULT 0"},
 		{Name: "updated_at", DDL: "`updated_at` bigint DEFAULT 0"},
+		{Name: "lang", DDL: "`lang` varchar(8) DEFAULT 'en'"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {

@@ -24,26 +24,28 @@ func TestCreateWithdrawalWithDeductionAndRejectRefund(t *testing.T) {
 	truncateTables(t)
 	insertWithdrawalTestUser(t, 3001, 120)
 
-	withdrawal, err := CreateWithdrawalWithDeduction(3001, 25)
+	withdrawal, err := CreateWithdrawalWithDeduction(3001, 25, "user3001@example.com", "User 3001")
 	require.NoError(t, err)
 	require.Equal(t, WithdrawalStatusPending, withdrawal.Status)
+	require.Equal(t, "user3001@example.com", withdrawal.PaypalEmail)
+	require.Equal(t, "User 3001", withdrawal.PaypalName)
 
 	var user User
 	require.NoError(t, DB.First(&user, 3001).Error)
 	assert.InDelta(t, 95.0, user.KolBalance, 0.000001)
 
-	require.NoError(t, RejectWithdrawal(withdrawal.Id, "stripe failed"))
+	require.NoError(t, RejectWithdrawal(withdrawal.Id, "paypal failed"))
 
 	var reloaded WithdrawalRequest
 	require.NoError(t, DB.First(&reloaded, withdrawal.Id).Error)
 	assert.Equal(t, WithdrawalStatusRejected, reloaded.Status)
-	assert.Equal(t, "stripe failed", reloaded.RejectReason)
+	assert.Equal(t, "paypal failed", reloaded.RejectReason)
 
 	require.NoError(t, DB.First(&user, 3001).Error)
 	assert.InDelta(t, 120.0, user.KolBalance, 0.000001)
 }
 
-func TestMarkWithdrawalPaidRequiresApprovedStatus(t *testing.T) {
+func TestMarkWithdrawalPaidAllowsPendingStatus(t *testing.T) {
 	truncateTables(t)
 	insertWithdrawalTestUser(t, 3002, 50)
 
@@ -54,9 +56,12 @@ func TestMarkWithdrawalPaidRequiresApprovedStatus(t *testing.T) {
 	}
 	require.NoError(t, DB.Create(withdrawal).Error)
 
-	err := MarkWithdrawalPaid(withdrawal.Id, "tr_pending")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), WithdrawalStatusPending)
+	require.NoError(t, MarkWithdrawalPaid(withdrawal.Id, "tr_pending"))
+
+	var reloaded WithdrawalRequest
+	require.NoError(t, DB.First(&reloaded, withdrawal.Id).Error)
+	assert.Equal(t, WithdrawalStatusPaid, reloaded.Status)
+	assert.Equal(t, "tr_pending", reloaded.PaypalTransactionId)
 }
 
 func TestMarkWithdrawalPaidUpdatesApprovedWithdrawal(t *testing.T) {
@@ -75,5 +80,5 @@ func TestMarkWithdrawalPaidUpdatesApprovedWithdrawal(t *testing.T) {
 	var reloaded WithdrawalRequest
 	require.NoError(t, DB.First(&reloaded, withdrawal.Id).Error)
 	assert.Equal(t, WithdrawalStatusPaid, reloaded.Status)
-	assert.Equal(t, "tr_paid", reloaded.StripeTransferId)
+	assert.Equal(t, "tr_paid", reloaded.PaypalTransactionId)
 }

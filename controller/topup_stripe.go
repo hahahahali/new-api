@@ -58,12 +58,19 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 		c.JSON(200, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getStripePayMoney(float64(req.Amount), group)
-	if payMoney <= 0.01 {
+	originalMoney := getStripePayMoney(float64(req.Amount), group)
+	if originalMoney <= 0.01 {
 		c.JSON(200, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
-	c.JSON(200, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+	rebateRate := service.GetKolRebateForUser(id)
+	discountedMoney := originalMoney * (1 - rebateRate)
+	c.JSON(200, gin.H{
+		"message":     "success",
+		"data":        strconv.FormatFloat(discountedMoney, 'f', 2, 64),
+		"original":    strconv.FormatFloat(originalMoney, 'f', 2, 64),
+		"rebate_rate": rebateRate,
+	})
 }
 
 func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
@@ -92,30 +99,27 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 
 	id := c.GetInt("id")
 	user, _ := model.GetUserById(id, false)
-	chargedMoney := GetChargedAmount(float64(req.Amount), *user)
+	originalMoney := getStripePayMoney(float64(req.Amount), user.Group)
+	if originalMoney < 0.50 {
+		c.JSON(200, gin.H{"message": "error", "data": "充值金额过低"})
+		return
+	}
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
 
-	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, req.SuccessURL, req.CancelURL)
+	topUp, _, err := service.CreatePendingTopUpWithKolRebate(id, req.Amount, originalMoney, referenceId, PaymentMethodStripe)
 	if err != nil {
-		log.Println("获取Stripe Checkout支付链接失败", err)
-		c.JSON(200, gin.H{"message": "error", "data": "拉起支付失败"})
+		c.JSON(200, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
 
-	topUp := &model.TopUp{
-		UserId:        id,
-		Amount:        req.Amount,
-		Money:         chargedMoney,
-		TradeNo:       referenceId,
-		PaymentMethod: PaymentMethodStripe,
-		CreateTime:    time.Now().Unix(),
-		Status:        common.TopUpStatusPending,
-	}
-	err = topUp.Insert()
+	payLink, err := genStripeLinkPriceData(referenceId, user.StripeCustomer, user.Email, topUp.Money, req.SuccessURL, req.CancelURL)
 	if err != nil {
-		c.JSON(200, gin.H{"message": "error", "data": "创建订单失败"})
+		topUp.Status = common.TopUpStatusFailed
+		_ = topUp.Update()
+		log.Println("获取Stripe Checkout支付链接失败", err)
+		c.JSON(200, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
 	c.JSON(200, gin.H{
@@ -347,6 +351,11 @@ func sessionExpired(event stripe.Event) {
 //   - cancelURL: custom URL to redirect when payment is canceled (empty for default)
 //
 // Returns the checkout session URL or an error if the session creation fails.
+//
+// NOTE: This is the upstream-original implementation kept verbatim for
+// merge-conflict isolation. Our code path uses genStripeLinkPriceData below
+// (dynamic per-order pricing). Do not delete or modify this function — leave
+// it untouched so that future syncs from QuantumNous/new-api merge cleanly.
 func genStripeLink(referenceId string, customerId string, email string, amount int64, successURL string, cancelURL string) (string, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return "", fmt.Errorf("无效的Stripe API密钥")
@@ -370,6 +379,65 @@ func genStripeLink(referenceId string, customerId string, email string, amount i
 			{
 				Price:    stripe.String(setting.StripePriceId),
 				Quantity: stripe.Int64(amount),
+			},
+		},
+		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
+		AllowPromotionCodes: stripe.Bool(setting.StripePromotionCodesEnabled),
+	}
+
+	if "" == customerId {
+		if "" != email {
+			params.CustomerEmail = stripe.String(email)
+		}
+
+		params.CustomerCreation = stripe.String(string(stripe.CheckoutSessionCustomerCreationAlways))
+	} else {
+		params.Customer = stripe.String(customerId)
+	}
+
+	result, err := session.New(params)
+	if err != nil {
+		return "", err
+	}
+
+	return result.URL, nil
+}
+
+// genStripeLinkPriceData is our parallel implementation that uses Stripe
+// price_data (dynamic per-order pricing in USD) instead of a fixed PriceId.
+// Required for KOL rebate + tiered pricing where the final amount differs
+// per order. Keep separate from upstream genStripeLink to preserve
+// merge-conflict isolation when syncing from QuantumNous/new-api.
+func genStripeLinkPriceData(referenceId string, customerId string, email string, payMoney float64, successURL string, cancelURL string) (string, error) {
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		return "", fmt.Errorf("无效的Stripe API密钥")
+	}
+
+	stripe.Key = setting.StripeApiSecret
+
+	if successURL == "" {
+		successURL = system_setting.ServerAddress + "/console/log"
+	}
+	if cancelURL == "" {
+		cancelURL = system_setting.ServerAddress + "/console/topup"
+	}
+
+	unitAmount := int64(payMoney*100 + 0.5) // convert USD to cents
+
+	params := &stripe.CheckoutSessionParams{
+		ClientReferenceID: stripe.String(referenceId),
+		SuccessURL:        stripe.String(successURL),
+		CancelURL:         stripe.String(cancelURL),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+					Currency:   stripe.String("usd"),
+					UnitAmount: stripe.Int64(unitAmount),
+					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+						Name: stripe.String("API Credits"),
+					},
+				},
+				Quantity: stripe.Int64(1),
 			},
 		},
 		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),

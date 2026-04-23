@@ -27,7 +27,7 @@ func GetTopUpInfo(c *gin.Context) {
 	payMethods := operation_setting.PayMethods
 
 	// 如果启用了 Stripe 支付，添加到支付方法列表
-	if setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" && setting.StripePriceId != "" {
+	if setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" {
 		// 检查是否已经包含 Stripe
 		hasStripe := false
 		for _, method := range payMethods {
@@ -80,24 +80,63 @@ func GetTopUpInfo(c *gin.Context) {
 
 	data := gin.H{
 		"enable_online_topup": operation_setting.PayAddress != "" && operation_setting.EpayId != "" && operation_setting.EpayKey != "",
-		"enable_stripe_topup": setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" && setting.StripePriceId != "",
+		"enable_stripe_topup": setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "",
 		"enable_creem_topup":  setting.CreemApiKey != "" && setting.CreemProducts != "[]",
-		"enable_waffo_topup": enableWaffo,
+		"enable_waffo_topup":  enableWaffo,
 		"waffo_pay_methods": func() interface{} {
 			if enableWaffo {
 				return setting.GetWaffoPayMethods()
 			}
 			return nil
 		}(),
-		"creem_products": setting.CreemProducts,
-		"pay_methods":         payMethods,
-		"min_topup":           operation_setting.MinTopUp,
-		"stripe_min_topup":    setting.StripeMinTopUp,
-		"waffo_min_topup":     setting.WaffoMinTopUp,
-		"amount_options":      operation_setting.GetPaymentSetting().AmountOptions,
-		"discount":            operation_setting.GetPaymentSetting().AmountDiscount,
+		"creem_products":   setting.CreemProducts,
+		"pay_methods":      payMethods,
+		"min_topup":        operation_setting.MinTopUp,
+		"stripe_min_topup": setting.StripeMinTopUp,
+		"waffo_min_topup":  setting.WaffoMinTopUp,
+		"amount_options":   operation_setting.GetPaymentSetting().AmountOptions,
+		"discount":         operation_setting.GetPaymentSetting().AmountDiscount,
 	}
 	common.ApiSuccess(c, data)
+}
+
+// GetPublicTopupPackages returns Stripe topup packages with default-group pricing.
+// No authentication required — only final computed prices are exposed, no internal config.
+func GetPublicTopupPackages(c *gin.Context) {
+	if setting.StripeApiSecret == "" || setting.StripeWebhookSecret == "" {
+		common.ApiErrorMsg(c, "Stripe not configured")
+		return
+	}
+
+	amountOptions := operation_setting.GetPaymentSetting().AmountOptions
+
+	type PackageInfo struct {
+		Amount  int    `json:"amount"`
+		Credits int    `json:"credits"`
+		Price   string `json:"price"`
+		Tag     string `json:"tag,omitempty"`
+	}
+
+	packages := make([]PackageInfo, 0, len(amountOptions))
+	for _, amount := range amountOptions {
+		payMoney := getStripePayMoney(float64(amount), "default")
+		if payMoney <= 0 {
+			continue
+		}
+		packages = append(packages, PackageInfo{
+			Amount:  amount,
+			Credits: amount * 25,
+			Price:   strconv.FormatFloat(payMoney, 'f', 2, 64),
+		})
+	}
+
+	n := len(packages)
+	if n >= 2 {
+		packages[n-2].Tag = "最受欢迎"
+		packages[n-1].Tag = "最划算"
+	}
+
+	common.ApiSuccess(c, gin.H{"packages": packages})
 }
 
 type EpayRequest struct {
@@ -181,8 +220,8 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
-	if payMoney < 0.01 {
+	originalMoney := getPayMoney(req.Amount, group)
+	if originalMoney < 0.01 {
 		c.JSON(200, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
@@ -202,37 +241,30 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "error", "data": "当前管理员未配置支付信息"})
 		return
 	}
-	uri, params, err := client.Purchase(&epay.PurchaseArgs{
-		Type:           req.PaymentMethod,
-		ServiceTradeNo: tradeNo,
-		Name:           fmt.Sprintf("TUC%d", req.Amount),
-		Money:          strconv.FormatFloat(payMoney, 'f', 2, 64),
-		Device:         epay.PC,
-		NotifyUrl:      notifyUrl,
-		ReturnUrl:      returnUrl,
-	})
-	if err != nil {
-		c.JSON(200, gin.H{"message": "error", "data": "拉起支付失败"})
-		return
-	}
 	amount := req.Amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		dAmount := decimal.NewFromInt(int64(amount))
 		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		amount = dAmount.Div(dQuotaPerUnit).IntPart()
 	}
-	topUp := &model.TopUp{
-		UserId:        id,
-		Amount:        amount,
-		Money:         payMoney,
-		TradeNo:       tradeNo,
-		PaymentMethod: req.PaymentMethod,
-		CreateTime:    time.Now().Unix(),
-		Status:        "pending",
-	}
-	err = topUp.Insert()
+	topUp, _, err := service.CreatePendingTopUpWithKolRebate(id, amount, originalMoney, tradeNo, req.PaymentMethod)
 	if err != nil {
 		c.JSON(200, gin.H{"message": "error", "data": "创建订单失败"})
+		return
+	}
+	uri, params, err := client.Purchase(&epay.PurchaseArgs{
+		Type:           req.PaymentMethod,
+		ServiceTradeNo: tradeNo,
+		Name:           fmt.Sprintf("TUC%d", req.Amount),
+		Money:          strconv.FormatFloat(topUp.Money, 'f', 2, 64),
+		Device:         epay.PC,
+		NotifyUrl:      notifyUrl,
+		ReturnUrl:      returnUrl,
+	})
+	if err != nil {
+		topUp.Status = common.TopUpStatusFailed
+		_ = topUp.Update()
+		c.JSON(200, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
 	c.JSON(200, gin.H{"message": "success", "data": params, "url": uri})
@@ -391,11 +423,13 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 	payMoney := getPayMoney(req.Amount, group)
-	if payMoney <= 0.01 {
+	rebateRate := service.GetKolRebateForUser(id)
+	discountedMoney := payMoney * (1 - rebateRate)
+	if discountedMoney <= 0.01 {
 		c.JSON(200, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
-	c.JSON(200, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+	c.JSON(200, gin.H{"message": "success", "data": strconv.FormatFloat(discountedMoney, 'f', 2, 64), "original": strconv.FormatFloat(payMoney, 'f', 2, 64), "rebate_rate": rebateRate})
 }
 
 func GetUserTopUps(c *gin.Context) {
@@ -470,4 +504,3 @@ func AdminCompleteTopUp(c *gin.Context) {
 	}
 	common.ApiSuccess(c, nil)
 }
-

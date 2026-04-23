@@ -37,6 +37,8 @@ import { IconSearch } from '@douyinfe/semi-icons';
 import { API, timestamp2string } from '../../../helpers';
 import { isAdmin } from '../../../helpers/utils';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
+import { useSecureVerification } from '../../../hooks/common/useSecureVerification';
+import SecureVerificationModal from '../../common/modals/SecureVerificationModal';
 const { Text } = Typography;
 
 // 状态映射配置
@@ -108,21 +110,54 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     setPage(1);
   };
 
+  const handleAdminCompleteSuccess = async () => {
+    Toast.success({ content: t('补单成功') });
+    await loadTopups(page, pageSize);
+  };
+
+  const {
+    isModalVisible,
+    verificationMethods,
+    verificationState,
+    withVerification,
+    executeVerification,
+    cancelVerification,
+    setVerificationCode,
+    switchVerificationMethod,
+  } = useSecureVerification({
+    onSuccess: async (result) => {
+      if (result?.success) {
+        await handleAdminCompleteSuccess();
+      }
+    },
+  });
+
   // 管理员补单
+  const completeTopupApiCall = async (tradeNo) => {
+    const res = await API.post('/api/user/topup/complete', {
+      trade_no: tradeNo,
+    });
+    if (!res.data.success) {
+      throw new Error(res.data.message || t('补单失败'));
+    }
+    return res.data;
+  };
+
   const handleAdminComplete = async (tradeNo) => {
     try {
-      const res = await API.post('/api/user/topup/complete', {
-        trade_no: tradeNo,
-      });
-      const { success, message } = res.data;
-      if (success) {
-        Toast.success({ content: t('补单成功') });
-        await loadTopups(page, pageSize);
-      } else {
-        Toast.error({ content: message || t('补单失败') });
+      const result = await withVerification(
+        () => completeTopupApiCall(tradeNo),
+        {
+          title: t('确认补单'),
+          description: t('为了保护账户安全，请验证您的身份。'),
+          preferredMethod: 'passkey',
+        },
+      );
+      if (result?.success) {
+        await handleAdminCompleteSuccess();
       }
     } catch (e) {
-      Toast.error({ content: t('补单失败') });
+      Toast.error({ content: e.message || t('补单失败') });
     }
   };
 
@@ -243,49 +278,62 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   }, [t, userIsAdmin]);
 
   return (
-    <Modal
-      title={t('充值账单')}
-      visible={visible}
-      onCancel={onCancel}
-      footer={null}
-      size={isMobile ? 'full-width' : 'large'}
-    >
-      <div className='mb-3'>
-        <Input
-          prefix={<IconSearch />}
-          placeholder={t('订单号')}
-          value={keyword}
-          onChange={handleKeywordChange}
-          showClear
-        />
-      </div>
-      <Table
-        columns={columns}
-        dataSource={topups}
-        loading={loading}
-        rowKey='id'
-        pagination={{
-          currentPage: page,
-          pageSize: pageSize,
-          total: total,
-          showSizeChanger: true,
-          pageSizeOpts: [10, 20, 50, 100],
-          onPageChange: handlePageChange,
-          onPageSizeChange: handlePageSizeChange,
-        }}
-        size='small'
-        empty={
-          <Empty
-            image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
-            darkModeImage={
-              <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
-            }
-            description={t('暂无充值记录')}
-            style={{ padding: 30 }}
+    <>
+      <Modal
+        title={t('充值账单')}
+        visible={visible}
+        onCancel={onCancel}
+        footer={null}
+        size={isMobile ? 'full-width' : 'large'}
+      >
+        <div className='mb-3'>
+          <Input
+            prefix={<IconSearch />}
+            placeholder={t('订单号')}
+            value={keyword}
+            onChange={handleKeywordChange}
+            showClear
           />
-        }
+        </div>
+        <Table
+          columns={columns}
+          dataSource={topups}
+          loading={loading}
+          rowKey='id'
+          pagination={{
+            currentPage: page,
+            pageSize: pageSize,
+            total: total,
+            showSizeChanger: true,
+            pageSizeOpts: [10, 20, 50, 100],
+            onPageChange: handlePageChange,
+            onPageSizeChange: handlePageSizeChange,
+          }}
+          size='small'
+          empty={
+            <Empty
+              image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
+              darkModeImage={
+                <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
+              }
+              description={t('暂无充值记录')}
+              style={{ padding: 30 }}
+            />
+          }
+        />
+      </Modal>
+      <SecureVerificationModal
+        visible={isModalVisible}
+        verificationMethods={verificationMethods}
+        verificationState={verificationState}
+        onVerify={executeVerification}
+        onCancel={cancelVerification}
+        onCodeChange={setVerificationCode}
+        onMethodSwitch={switchVerificationMethod}
+        title={verificationState.title}
+        description={verificationState.description}
       />
-    </Modal>
+    </>
   );
 };
 

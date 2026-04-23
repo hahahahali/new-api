@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   Button,
   Card,
+  Modal,
   Popconfirm,
   Popover,
   Table,
   Tag,
+  TextArea,
   Typography,
   Space,
 } from '@douyinfe/semi-ui';
@@ -93,6 +95,11 @@ const AffiliateReview = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [actionLoading, setActionLoading] = useState({});
 
+  // Reject modal state
+  const [rejectModal, setRejectModal] = useState({ visible: false, id: null });
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectLoading, setRejectLoading] = useState(false);
+
   const loadApplications = async (p = page, s = filterStatus) => {
     setLoading(true);
     try {
@@ -134,12 +141,21 @@ const AffiliateReview = () => {
     }
   };
 
-  const handleReject = async (id) => {
-    setActionLoading((prev) => ({ ...prev, [`reject_${id}`]: true }));
+  const openRejectModal = (id) => {
+    setRejectReason('');
+    setRejectModal({ visible: true, id });
+  };
+
+  const handleRejectConfirm = async () => {
+    setRejectLoading(true);
     try {
-      const res = await API.post(`/api/affiliate/applications/${id}/reject`);
+      const res = await API.post(
+        `/api/affiliate/applications/${rejectModal.id}/reject`,
+        { reason: rejectReason.trim() },
+      );
       if (res.data.success) {
-        showSuccess(t('已拒绝申请'));
+        showSuccess(t('已拒绝申请，通知邮件已发送'));
+        setRejectModal({ visible: false, id: null });
         loadApplications();
       } else {
         showError(res.data.message);
@@ -147,7 +163,7 @@ const AffiliateReview = () => {
     } catch (e) {
       showError(t('操作失败'));
     } finally {
-      setActionLoading((prev) => ({ ...prev, [`reject_${id}`]: false }));
+      setRejectLoading(false);
     }
   };
 
@@ -199,21 +215,14 @@ const AffiliateReview = () => {
                 {t('通过')}
               </Button>
             </Popconfirm>
-            <Popconfirm
-              title={t('确认拒绝该申请？')}
-              onConfirm={() => handleReject(record.id)}
-              okText={t('拒绝')}
-              cancelText={t('取消')}
+            <Button
+              theme='light'
+              type='danger'
+              size='small'
+              onClick={() => openRejectModal(record.id)}
             >
-              <Button
-                theme='light'
-                type='danger'
-                size='small'
-                loading={actionLoading[`reject_${record.id}`]}
-              >
-                {t('拒绝')}
-              </Button>
-            </Popconfirm>
+              {t('拒绝')}
+            </Button>
           </Space>
         );
       },
@@ -256,6 +265,32 @@ const AffiliateReview = () => {
           scroll={{ x: 'max-content' }}
         />
       </Card>
+
+      <Modal
+        title={t('拒绝申请')}
+        visible={rejectModal.visible}
+        onCancel={() => setRejectModal({ visible: false, id: null })}
+        onOk={handleRejectConfirm}
+        okText={t('确认拒绝')}
+        okType='danger'
+        cancelText={t('取消')}
+        confirmLoading={rejectLoading}
+      >
+        <Text type='secondary' style={{ display: 'block', marginBottom: 12 }}>
+          {t('拒绝后将自动向申请人发送通知邮件。')}
+        </Text>
+        <Text style={{ display: 'block', marginBottom: 8 }}>
+          {t('拒绝原因（可选）')}
+        </Text>
+        <TextArea
+          value={rejectReason}
+          onChange={setRejectReason}
+          placeholder={t('填写拒绝原因，将帮助申请人了解问题所在，不填则发送通用拒绝通知')}
+          rows={4}
+          maxCount={500}
+          showClear
+        />
+      </Modal>
     </div>
   );
 };

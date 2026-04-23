@@ -22,6 +22,7 @@ tiktoken_cache
 web/bun.lock
 plans
 .claude
+PROJECT_MASTER.md
 
 electron/node_modules
 electron/dist
@@ -41,3 +42,12 @@ token_estimator_test.go
 /*-dev-summary.md
 /deconflict.md
 /review.md
+
+# Local dev notes
+更改点检查.md
+
+# Local test files (not for repo)
+main_test.go
+controller/affiliate_test.go
+model/affiliate_application_test.go
+service/commission_test.go

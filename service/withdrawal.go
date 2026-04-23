@@ -1,5 +1,11 @@
 package service
 
+// [Stripe Connect - disabled]
+// The Stripe Connect automatic transfer logic has been replaced by manual PayPal payouts.
+// Admin manually enters a PayPal transaction ID after completing the transfer.
+// Original code preserved below for reference.
+
+/*
 import (
 	"errors"
 	"fmt"
@@ -42,3 +48,4 @@ func CreateWithdrawalTransfer(withdrawal *model.WithdrawalRequest, user *model.U
 
 	return stripeTransfer.New(params)
 }
+*/

@@ -33,14 +33,27 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+func loadCurrentSessionUser(session sessions.Session) (*model.User, error) {
+	idRaw := session.Get("id")
+	if idRaw == nil {
+		return nil, nil
+	}
+	userId, ok := idRaw.(int)
+	if !ok || userId <= 0 {
+		return nil, errors.New("invalid session user id")
+	}
+	return model.GetUserById(userId, false)
+}
+
 func authHelper(c *gin.Context, minRole int) {
 	session := sessions.Default(c)
 	username := session.Get("username")
 	role := session.Get("role")
 	id := session.Get("id")
 	status := session.Get("status")
+	group := session.Get("group")
 	useAccessToken := false
-	if username == nil {
+	if username == nil || role == nil || id == nil || status == nil {
 		// Check access token
 		accessToken := c.Request.Header.Get("Authorization")
 		if accessToken == "" {
@@ -91,6 +104,30 @@ func authHelper(c *gin.Context, minRole int) {
 			c.Abort()
 			return
 		}
+	} else {
+		currentUser, authErr := loadCurrentSessionUser(session)
+		if authErr != nil {
+			common.SysLog("loadCurrentSessionUser error: " + authErr.Error())
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+			})
+			c.Abort()
+			return
+		}
+		if currentUser == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+			})
+			c.Abort()
+			return
+		}
+		username = currentUser.Username
+		role = currentUser.Role
+		id = currentUser.Id
+		status = currentUser.Status
+		group = currentUser.Group
 	}
 	// get header New-Api-User
 	apiUserIdStr := c.Request.Header.Get("New-Api-User")
@@ -149,8 +186,8 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
-	c.Set("group", session.Get("group"))
-	c.Set("user_group", session.Get("group"))
+	c.Set("group", group)
+	c.Set("user_group", group)
 	c.Set("use_access_token", useAccessToken)
 
 	c.Next()
@@ -195,9 +232,9 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		// Try session auth first (dashboard users)
 		session := sessions.Default(c)
-		if id := session.Get("id"); id != nil {
-			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
-				c.Set("id", id)
+		if currentUser, err := loadCurrentSessionUser(session); err == nil && currentUser != nil {
+			if currentUser.Status == common.UserStatusEnabled {
+				c.Set("id", currentUser.Id)
 				c.Next()
 				return
 			}

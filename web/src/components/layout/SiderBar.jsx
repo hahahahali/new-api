@@ -51,6 +51,7 @@ const routerMap = {
   personal: '/console/personal',
   kol: '/console/kol',
   applications: '/console/applications',
+  withdrawals: '/console/withdrawals',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -509,6 +510,25 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                     text: t('达人申请'),
                     itemKey: 'applications',
                     to: '/console/applications',
+                  },
+                ].map((item) => renderNavItem(item))}
+              </div>
+            </>
+          )}
+
+          {/* 提现管理 - 仅超级管理员可见 */}
+          {isRoot() && (
+            <>
+              <Divider className='sidebar-divider' />
+              <div>
+                {!collapsed && (
+                  <div className='sidebar-group-label'>{t('财务')}</div>
+                )}
+                {[
+                  {
+                    text: t('提现管理'),
+                    itemKey: 'withdrawals',
+                    to: '/console/withdrawals',
                   },
                 ].map((item) => renderNavItem(item))}
               </div>

@@ -24,11 +24,13 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	gsessions "github.com/gorilla/sessions"
 	"github.com/joho/godotenv"
 
 	_ "net/http/pprof"
@@ -173,14 +175,10 @@ func main() {
 	middleware.SetUpLogger(server)
 	// Initialize session store
 	store := cookie.NewStore([]byte(common.SessionSecret))
-	store.Options(sessions.Options{
-		Path:     "/",
-		MaxAge:   2592000, // 30 days
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteStrictMode,
-	})
+	store.Options(sessionCookieOptions(false))
+	common.SysLog("session cookie secure=request-based auto detection (default false; override with SESSION_COOKIE_SECURE=true/false)")
 	server.Use(sessions.Sessions("session", store))
+	server.Use(applySessionCookieSecurity())
 
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
@@ -199,6 +197,76 @@ func main() {
 	if err != nil {
 		common.FatalLog("failed to start HTTP server: " + err.Error())
 	}
+}
+
+func sessionCookieOptions(secure bool) sessions.Options {
+	return sessions.Options{
+		Path:     "/",
+		MaxAge:   2592000, // 30 days
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+func applySessionCookieSecurity() gin.HandlerFunc {
+	type sessionAccessor interface {
+		Session() *gsessions.Session
+	}
+
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		secure := shouldUseSecureSessionCookieForRequest(c)
+		if accessor, ok := session.(sessionAccessor); ok {
+			accessor.Session().Options = sessionCookieOptions(secure).ToGorillaOptions()
+		} else {
+			session.Options(sessionCookieOptions(secure))
+		}
+		c.Next()
+	}
+}
+
+func shouldUseSecureSessionCookieForRequest(c *gin.Context) bool {
+	if rawValue := strings.TrimSpace(os.Getenv("SESSION_COOKIE_SECURE")); rawValue != "" {
+		secure, err := strconv.ParseBool(rawValue)
+		if err == nil {
+			return secure
+		}
+		common.SysError(fmt.Sprintf("invalid SESSION_COOKIE_SECURE value %q, fallback to request auto detection", rawValue))
+	}
+
+	if c.Request.TLS != nil {
+		return true
+	}
+	forwardedProto := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")))
+	if forwardedProto != "" {
+		firstProto := strings.TrimSpace(strings.Split(forwardedProto, ",")[0])
+		if firstProto == "https" || firstProto == "wss" {
+			return true
+		}
+		if firstProto == "http" || firstProto == "ws" {
+			return false
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Ssl")), "on") {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Url-Scheme")), "https") {
+		return true
+	}
+	if forwarded := strings.ToLower(strings.TrimSpace(c.GetHeader("Forwarded"))); forwarded != "" {
+		if strings.Contains(forwarded, "proto=https") {
+			return true
+		}
+		if strings.Contains(forwarded, "proto=http") {
+			return false
+		}
+	}
+	serverAddress := strings.TrimSpace(system_setting.ServerAddress)
+	if strings.HasPrefix(serverAddress, "https://") && c.Request.Host != "" && strings.EqualFold(c.Request.Host, strings.TrimPrefix(strings.TrimPrefix(serverAddress, "https://"), "http://")) {
+		return true
+	}
+	return false
 }
 
 func InjectUmamiAnalytics() {

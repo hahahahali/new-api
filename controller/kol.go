@@ -3,16 +3,19 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
-	"github.com/stripe/stripe-go/v81"
-	"github.com/stripe/stripe-go/v81/account"
-	"github.com/stripe/stripe-go/v81/accountlink"
+
+	// [Stripe Connect - disabled]
+	// "github.com/QuantumNous/new-api/service"
+	// "github.com/QuantumNous/new-api/setting/system_setting"
+	// "github.com/stripe/stripe-go/v81"
+	// "github.com/stripe/stripe-go/v81/account"
+	// "github.com/stripe/stripe-go/v81/accountlink"
 )
 
 // GetKolDashboard returns the KOL's overview data
@@ -40,17 +43,17 @@ func GetKolDashboard(c *gin.Context) {
 	model.DB.Model(&model.User{}).Where("inviter_id = ?", userId).Count(&inviteeCount)
 
 	common.ApiSuccess(c, gin.H{
-		"kol_balance":              user.KolBalance,
-		"kol_pending_balance":      pendingCommission,
-		"kol_history_balance":      user.KolHistoryBalance,
-		"commission_rate":          setting.KolCommissionRate,
-		"invitee_count":            inviteeCount,
-		"total_commission":         totalCommission,
-		"total_recharge":           totalRecharge,
-		"commission_count":         commissionCount,
-		"aff_code":                 user.AffCode,
-		"stripe_connect_onboarded": user.StripeConnectOnboarded,
-		"min_withdrawal_amount":    setting.MinWithdrawalAmount,
+		"kol_balance":           user.KolBalance,
+		"kol_pending_balance":   pendingCommission,
+		"kol_history_balance":   user.KolHistoryBalance,
+		"commission_rate":       setting.KolCommissionRate,
+		"kol_rebate_rate":       user.KolRebateRate,
+		"invitee_count":         inviteeCount,
+		"total_commission":      totalCommission,
+		"total_recharge":        totalRecharge,
+		"commission_count":      commissionCount,
+		"aff_code":              user.AffCode,
+		"min_withdrawal_amount": setting.MinWithdrawalAmount,
 	})
 }
 
@@ -118,162 +121,125 @@ func GetKolWithdrawals(c *gin.Context) {
 }
 
 type KolWithdrawRequest struct {
-	Amount float64 `json:"amount" binding:"required"`
+	Amount      float64 `json:"amount" binding:"required"`
+	PaypalEmail string  `json:"paypal_email" binding:"required"`
+	PaypalName  string  `json:"paypal_name" binding:"required"`
 }
 
-// RequestKolWithdraw creates a withdrawal request and automatically transfers
-// via Stripe Connect. No admin approval is needed.
+// RequestKolWithdraw creates a pending withdrawal with PayPal payout info.
+// Payouts are processed manually by admin on the 1st and 15th of each month.
 func RequestKolWithdraw(c *gin.Context) {
 	userId := c.GetInt("id")
 
 	var req KolWithdrawRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ApiErrorMsg(c, "参数错误")
+		common.ApiErrorMsg(c, "参数错误：请填写提现金额、PayPal 邮箱和收款人姓名")
 		return
 	}
 
 	if req.Amount < setting.MinWithdrawalAmount {
-		common.ApiErrorMsg(c, "提现金额不能低于最低限额")
+		common.ApiErrorMsg(c, fmt.Sprintf("提现金额不能低于最低限额 $%.2f", setting.MinWithdrawalAmount))
 		return
 	}
 
-	if !setting.StripeConnectEnabled || setting.StripeApiSecret == "" {
-		common.ApiErrorMsg(c, "Stripe Connect 未启用，无法提现")
-		return
-	}
-
-	user, err := model.GetUserById(userId, false)
+	withdrawal, err := model.CreateWithdrawalWithDeduction(userId, req.Amount, req.PaypalEmail, req.PaypalName)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-
-	if !user.StripeConnectOnboarded {
-		// DB flag may be stale — do a real-time Stripe check when account exists.
-		if user.StripeConnectAccountId != "" {
-			stripe.Key = setting.StripeApiSecret
-			acct, err := account.GetByID(user.StripeConnectAccountId, nil)
-			if err == nil && acct.ChargesEnabled && acct.PayoutsEnabled {
-				model.DB.Model(&model.User{}).Where("id = ?", userId).
-					Update("stripe_connect_onboarded", true)
-			} else {
-				common.ApiErrorMsg(c, "请先完成 Stripe Connect 账户认证")
-				return
-			}
-		} else {
-			common.ApiErrorMsg(c, "请先完成 Stripe Connect 账户认证")
-			return
-		}
-	}
-
-	// 1. Create withdrawal (pending) — balance deducted immediately
-	withdrawal, err := model.CreateWithdrawalWithDeduction(userId, req.Amount)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-
-	// 2. Auto-approve (pending → approved)
-	changed, err := model.ApproveWithdrawal(withdrawal.Id)
-	if err != nil || !changed {
-		// Shouldn't happen since we just created it, but handle gracefully
-		_ = model.RejectWithdrawal(withdrawal.Id, "系统错误：自动审核失败")
-		common.ApiErrorMsg(c, "提现失败，余额已退还")
-		return
-	}
-	withdrawal.Status = model.WithdrawalStatusApproved
-
-	// 3. Stripe Connect transfer
-	transfer, err := service.CreateWithdrawalTransfer(withdrawal, user)
-	if err != nil {
-		// A definitive Stripe API failure is safe to roll back and refund.
-		if !service.IsStripeTransferDefinitiveFailure(err) {
-			common.SysError(fmt.Sprintf(
-				"withdrawal %d: Stripe transfer result is uncertain (%v). Left in approved for reconciliation.",
-				withdrawal.Id, err,
-			))
-			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"message": "提现已提交，Stripe 打款状态确认中，请稍后查看提现记录",
-				"data": gin.H{
-					"withdrawal":                    withdrawal,
-					"transfer_pending_confirmation": true,
-				},
-			})
-			return
-		}
-
-		// Stripe transfer failed definitively — revert to pending, then reject to refund balance
-		if revertErr := model.RevertWithdrawalToPending(withdrawal.Id); revertErr != nil {
-			common.SysError(fmt.Sprintf(
-				"withdrawal %d: Stripe transfer failed (%v) AND revert failed (%v). Manual fix required.",
-				withdrawal.Id, err, revertErr,
-			))
-			common.ApiErrorMsg(c, "Stripe 打款失败且状态回退失败，请联系管理员处理")
-			return
-		}
-		_ = model.RejectWithdrawal(withdrawal.Id, "Stripe 打款失败: "+err.Error())
-		common.ApiErrorMsg(c, "Stripe 打款失败，余额已退还: "+err.Error())
-		return
-	}
-
-	// 4. Mark as paid
-	if dbErr := model.MarkWithdrawalPaid(withdrawal.Id, transfer.ID); dbErr != nil {
-		common.SysError(fmt.Sprintf(
-			"CRITICAL: Stripe transfer %s succeeded for withdrawal %d but DB update failed: %v",
-			transfer.ID, withdrawal.Id, dbErr,
-		))
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Stripe 已打款成功，但状态同步仍在处理中，请稍后查看提现记录",
-			"data": gin.H{
-				"withdrawal":        withdrawal,
-				"transfer_id":       transfer.ID,
-				"db_sync_pending":   true,
-				"withdrawal_status": model.WithdrawalStatusApproved,
-			},
-		})
-		return
-	}
-	withdrawal.Status = model.WithdrawalStatusPaid
-	withdrawal.StripeTransferId = transfer.ID
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "提现成功",
-		"data": gin.H{
-			"withdrawal":  withdrawal,
-			"transfer_id": transfer.ID,
-		},
+		"message": "提现申请已提交",
+		"data":    withdrawal,
 	})
 }
 
-// KolStripeConnectOnboard generates a Stripe Connect onboarding link
+type KolSetRebateRequest struct {
+	RebateRate float64 `json:"rebate_rate"`
+}
+
+// SetKolRebateRate allows a KOL to set how much of their commission they share back
+// with invited users as a purchase discount (0 to KolCommissionRate).
+// KolUpdateAffCode lets a KOL user set their own custom invite code (no admin approval needed).
+func KolUpdateAffCode(c *gin.Context) {
+	userId := c.GetInt("id")
+	var req struct {
+		AffCode string `json:"aff_code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	code := strings.TrimSpace(req.AffCode)
+	if len(code) < 4 || len(code) > 20 {
+		common.ApiErrorMsg(c, "邀请码长度必须在 4～20 个字符之间")
+		return
+	}
+	for _, ch := range code {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			common.ApiErrorMsg(c, "邀请码只能包含字母、数字和下划线")
+			return
+		}
+	}
+	existingId, _ := model.GetUserIdByAffCode(code)
+	if existingId > 0 && existingId != userId {
+		common.ApiErrorMsg(c, "该邀请码已被其他用户使用，请换一个")
+		return
+	}
+	if err := model.DB.Model(&model.User{}).Where("id = ?", userId).
+		Update("aff_code", code).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"aff_code": code})
+}
+
+func SetKolRebateRate(c *gin.Context) {
+	userId := c.GetInt("id")
+	var req KolSetRebateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	maxRate := setting.KolCommissionRate
+	if req.RebateRate < 0 || req.RebateRate > maxRate {
+		common.ApiErrorMsg(c, fmt.Sprintf("让利比例必须在 0~%.0f%% 之间", maxRate*100))
+		return
+	}
+	if err := model.DB.Model(&model.User{}).Where("id = ?", userId).
+		Update("kol_rebate_rate", req.RebateRate).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// [Stripe Connect - disabled]
+// KolStripeConnectOnboard and KolStripeConnectStatus have been replaced by PayPal manual payouts.
+// Original code preserved below for reference.
+
+/*
 func KolStripeConnectOnboard(c *gin.Context) {
 	if !setting.StripeConnectEnabled {
 		common.ApiErrorMsg(c, "Stripe Connect 未启用")
 		return
 	}
-
 	if setting.StripeApiSecret == "" {
 		common.ApiErrorMsg(c, "Stripe 未配置")
 		return
 	}
-
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-
 	stripe.Key = setting.StripeApiSecret
-
 	var accountId string
 	if user.StripeConnectAccountId != "" {
 		accountId = user.StripeConnectAccountId
 	} else {
-		// Create a new Express account
 		params := &stripe.AccountParams{
 			Type: stripe.String(string(stripe.AccountTypeExpress)),
 		}
@@ -286,16 +252,11 @@ func KolStripeConnectOnboard(c *gin.Context) {
 			return
 		}
 		accountId = acct.ID
-
-		// Save account ID to user
 		model.DB.Model(&model.User{}).Where("id = ?", userId).
 			Update("stripe_connect_account_id", accountId)
 	}
-
-	// Generate onboarding link
 	returnURL := system_setting.ServerAddress + "/console/kol"
 	refreshURL := system_setting.ServerAddress + "/console/kol"
-
 	linkParams := &stripe.AccountLinkParams{
 		Account:    stripe.String(accountId),
 		RefreshURL: stripe.String(refreshURL),
@@ -307,49 +268,35 @@ func KolStripeConnectOnboard(c *gin.Context) {
 		common.ApiErrorMsg(c, "生成 Onboarding 链接失败: "+err.Error())
 		return
 	}
-
-	common.ApiSuccess(c, gin.H{
-		"onboarding_url": link.URL,
-	})
+	common.ApiSuccess(c, gin.H{"onboarding_url": link.URL})
 }
 
-// KolStripeConnectStatus checks if the Stripe Connect account onboarding is complete
-// and updates the user's stripe_connect_onboarded flag accordingly.
 func KolStripeConnectStatus(c *gin.Context) {
 	if !setting.StripeConnectEnabled {
 		common.ApiErrorMsg(c, "Stripe Connect 未启用")
 		return
 	}
-
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-
 	if user.StripeConnectAccountId == "" {
-		common.ApiSuccess(c, gin.H{
-			"onboarded":  false,
-			"account_id": "",
-		})
+		common.ApiSuccess(c, gin.H{"onboarded": false, "account_id": ""})
 		return
 	}
-
 	stripe.Key = setting.StripeApiSecret
-
 	acct, err := account.GetByID(user.StripeConnectAccountId, nil)
 	if err != nil {
 		common.ApiErrorMsg(c, "查询 Stripe Connect 账户失败: "+err.Error())
 		return
 	}
-
 	onboarded := acct.ChargesEnabled && acct.PayoutsEnabled
 	if onboarded != user.StripeConnectOnboarded {
 		model.DB.Model(&model.User{}).Where("id = ?", userId).
 			Update("stripe_connect_onboarded", onboarded)
 	}
-
 	common.ApiSuccess(c, gin.H{
 		"onboarded":       onboarded,
 		"account_id":      user.StripeConnectAccountId,
@@ -357,3 +304,4 @@ func KolStripeConnectStatus(c *gin.Context) {
 		"payouts_enabled": acct.PayoutsEnabled,
 	})
 }
+*/
