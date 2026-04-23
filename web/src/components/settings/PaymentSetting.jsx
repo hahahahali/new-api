@@ -42,6 +42,8 @@ const PaymentSetting = () => {
     PayMethods: '',
     AmountOptions: '',
     AmountDiscount: '',
+    AmountOptionNames: '',
+    AmountOptionDescs: '',
 
     StripeApiSecret: '',
     StripeWebhookSecret: '',
@@ -101,6 +103,28 @@ const PaymentSetting = () => {
               );
             } catch (error) {
               newInputs['AmountDiscount'] = item.value;
+            }
+            break;
+          case 'payment_setting.amount_option_names':
+            try {
+              newInputs['AmountOptionNames'] = JSON.stringify(
+                JSON.parse(item.value),
+                null,
+                2,
+              );
+            } catch (error) {
+              newInputs['AmountOptionNames'] = item.value;
+            }
+            break;
+          case 'payment_setting.amount_option_descs':
+            try {
+              newInputs['AmountOptionDescs'] = JSON.stringify(
+                JSON.parse(item.value),
+                null,
+                2,
+              );
+            } catch (error) {
+              newInputs['AmountOptionDescs'] = item.value;
             }
             break;
           case 'Price':

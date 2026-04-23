@@ -109,6 +109,8 @@ func GetTopUpInfo(c *gin.Context) {
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
+		"amount_option_names":     operation_setting.GetPaymentSetting().AmountOptionNames,
+		"amount_option_descs":     operation_setting.GetPaymentSetting().AmountOptionDescs,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 	}
 	common.ApiSuccess(c, data)
@@ -125,22 +127,36 @@ func GetPublicTopupPackages(c *gin.Context) {
 	amountOptions := operation_setting.GetPaymentSetting().AmountOptions
 
 	type PackageInfo struct {
-		Amount  int    `json:"amount"`
-		Credits int    `json:"credits"`
-		Price   string `json:"price"`
-		Tag     string `json:"tag,omitempty"`
+		Amount      int    `json:"amount"`
+		Credits     int    `json:"credits"`
+		Price       string `json:"price"`
+		Tag         string `json:"tag,omitempty"`
+		Name        string `json:"name,omitempty"`
+		Description string `json:"description,omitempty"`
 	}
 
+	amountOptionNames := operation_setting.GetPaymentSetting().AmountOptionNames
+	amountOptionDescs := operation_setting.GetPaymentSetting().AmountOptionDescs
 	packages := make([]PackageInfo, 0, len(amountOptions))
-	for _, amount := range amountOptions {
+	for i, amount := range amountOptions {
 		payMoney := getStripePayMoney(float64(amount), "default")
 		if payMoney <= 0 {
 			continue
 		}
+		name := ""
+		if i < len(amountOptionNames) {
+			name = amountOptionNames[i]
+		}
+		desc := ""
+		if i < len(amountOptionDescs) {
+			desc = amountOptionDescs[i]
+		}
 		packages = append(packages, PackageInfo{
-			Amount:  amount,
-			Credits: amount * 25,
-			Price:   strconv.FormatFloat(payMoney, 'f', 2, 64),
+			Amount:      amount,
+			Credits:     amount * 25,
+			Price:       strconv.FormatFloat(payMoney, 'f', 2, 64),
+			Name:        name,
+			Description: desc,
 		})
 	}
 

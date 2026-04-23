@@ -39,6 +39,8 @@ export default function SettingsGeneralPayment(props) {
     PayMethods: '',
     AmountOptions: '',
     AmountDiscount: '',
+    AmountOptionNames: '',
+    AmountOptionDescs: '',
   });
   const [originInputs, setOriginInputs] = useState({});
   const formApiRef = useRef(null);
@@ -52,6 +54,7 @@ export default function SettingsGeneralPayment(props) {
         PayMethods: props.options.PayMethods || '',
         AmountOptions: props.options.AmountOptions || '',
         AmountDiscount: props.options.AmountDiscount || '',
+        AmountOptionNames: props.options.AmountOptionNames || '',
       };
       setInputs(currentInputs);
       setOriginInputs({ ...currentInputs });
@@ -98,6 +101,24 @@ export default function SettingsGeneralPayment(props) {
       return;
     }
 
+    if (
+      originInputs.AmountOptionNames !== inputs.AmountOptionNames &&
+      inputs.AmountOptionNames.trim() !== '' &&
+      !verifyJSON(inputs.AmountOptionNames)
+    ) {
+      showError(t('套餐名称配置不是合法的 JSON 数组'));
+      return;
+    }
+
+    if (
+      originInputs.AmountOptionDescs !== inputs.AmountOptionDescs &&
+      inputs.AmountOptionDescs.trim() !== '' &&
+      !verifyJSON(inputs.AmountOptionDescs)
+    ) {
+      showError(t('套餐副标题配置不是合法的 JSON 数组'));
+      return;
+    }
+
     setLoading(true);
     try {
       const options = [
@@ -129,6 +150,18 @@ export default function SettingsGeneralPayment(props) {
         options.push({
           key: 'payment_setting.amount_discount',
           value: inputs.AmountDiscount,
+        });
+      }
+      if (originInputs.AmountOptionNames !== inputs.AmountOptionNames) {
+        options.push({
+          key: 'payment_setting.amount_option_names',
+          value: inputs.AmountOptionNames,
+        });
+      }
+      if (originInputs.AmountOptionDescs !== inputs.AmountOptionDescs) {
+        options.push({
+          key: 'payment_setting.amount_option_descs',
+          value: inputs.AmountOptionDescs,
         });
       }
 
@@ -234,6 +267,36 @@ export default function SettingsGeneralPayment(props) {
                 autosize
                 extraText={t(
                   '设置不同充值金额对应的折扣，键为充值金额，值为折扣率，例如：{"100": 0.95, "200": 0.9, "500": 0.85}',
+                )}
+              />
+            </Col>
+          </Row>
+          <Row style={{ marginTop: 16 }}>
+            <Col span={24}>
+              <Form.TextArea
+                field='AmountOptionNames'
+                label={t('套餐名称配置')}
+                placeholder={t(
+                  '为一个 JSON 数组，与充值数量选项一一对应，例如：["Starter", "Basic", "Pro", "Flagship"]',
+                )}
+                autosize
+                extraText={t(
+                  '设置每个充值档位的展示名称，顺序需与自定义充值数量选项保持一致，例如：["Starter", "Basic", "Pro", "Flagship"]',
+                )}
+              />
+            </Col>
+          </Row>
+          <Row style={{ marginTop: 16 }}>
+            <Col span={24}>
+              <Form.TextArea
+                field='AmountOptionDescs'
+                label={t('套餐副标题配置')}
+                placeholder={t(
+                  '为一个 JSON 数组，与充值数量选项一一对应，例如：["适合初次体验", "适合个人爱好者", "适合专业创作者", "适合高频用户"]',
+                )}
+                autosize
+                extraText={t(
+                  '设置每个充值档位卡片下方的描述文字，顺序需与自定义充值数量选项保持一致',
                 )}
               />
             </Col>
