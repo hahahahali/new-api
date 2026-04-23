@@ -147,7 +147,17 @@
   - `RequestAmount` 同步返回 `original`（原价）和 `rebate_rate`（KOL 推荐折扣率）字段。
   - **解耦原则**：保留上游 `genStripeLink` 完整签名与函数体，意味着上游对该函数的任何修改（bug fix、Stripe SDK 升级）都能 merge 干净；我们的实现走完全独立的 `genStripeLinkPriceData`，互不影响。
 - **改动 3**：`topup.go` / `topup_stripe.go` 创建充值订单时，改为通过 `service.CreatePendingTopUpWithKolRebate()` 在事务内先锁定 invitee、按”已成功佣金单 + 当前 pending 充值单”计算推荐折扣资格，再落 pending 订单，堵住并发/提前下单绕过”前 3 单折扣”限制的问题；若拉起支付失败则立即将该 pending 订单标记为 `failed` 释放名额。
-- **改动 4**（仅 `topup.go`）：新增 `GetPublicTopupPackages()` — 无需鉴权的充值套餐接口，供落地页未登录访客查看实时定价。使用 `getStripePayMoney(amount, “default”)` 计算标准价格（不含 KOL 折扣），仅返回最终价格，不暴露折扣表、StripeUnitPrice 等内部配置；Stripe 未配置时返回错误。
+- **改动 4**（仅 `topup.go`）：新增 `GetPublicTopupPackages()` — 无需鉴权的充值套餐接口，供落地页未登录访客查看实时定价。
+  - `PackageInfo` 新增 `Name string` 和 `Description string` 字段，分别来自 `AmountOptionNames` / `AmountOptionDescs` 配置，供落地页展示套餐标题和副标题。
+  - `Credits` 字段直接等于 `amount`（即 `AmountOptions` 里的原始值），不再乘以 25；站点通过 `AmountOptions` 直接配置积分数量，无需换算。
+  - `GetTopUpInfo` 同步返回 `amount_option_names` 和 `amount_option_descs` 字段，供已登录的充值页面使用。
+  - 使用 `getStripePayMoney(amount, “default”)` 计算标准价格（不含 KOL 折扣），仅返回最终价格，不暴露折扣表、StripeUnitPrice 等内部配置；Stripe 未配置时返回错误。
+- **⚠️ 风险点**：
+  - 上游若新增支付渠道或修改回调流程，只需在成功分支加一行 3 参数调用即可接入佣金系统。
+  - 上游若修改 `RequestPay` / `RequestEpay` 的下单顺序，需保留”折扣资格判断与 pending 订单创建在同一事务内完成”的约束，不能回退为先查资格、后单独插入订单。
+  - `topup.go` 中 `enable_stripe_topup` 检查已去除 `StripePriceId` 依赖，仅校验 `StripeApiSecret` + `StripeWebhookSecret`。`model/option.go` 已删除 `StripePriceId` 的 InitOptionMap/UpdateOption 注册，前端设置页（`SettingsPaymentGatewayStripe.jsx`、`PaymentSetting.jsx`）也删除了输入字段。**`setting/payment_stripe.go` 中 `var StripePriceId = “”` 已恢复并保留**——仅作为编译兼容存根存在，让上游 `genStripeLink` 函数体能编译通过；运行时该变量始终为空，我们的支付链路不依赖它。`model/subscription.go` 中各套餐自有的 `StripePriceId` 字段不受影响。
+  - 上游若修改 `getStripePayMoney` 签名或 `AmountOptions` 结构，`GetPublicTopupPackages` 需同步调整。
+  - `Credits` 字段语义已从”amount × 25 换算后的 token 数”改为”直接等于 amount”；如果未来需要换算比例，请修改 `GetPublicTopupPackages` 内的计算逻辑，**不要**回退为 `amount * 25`。
 - **风险点**：
   - 上游若新增支付渠道或修改回调流程，只需在成功分支加一行 3 参数调用即可接入佣金系统。
   - 上游若修改 `RequestPay` / `RequestEpay` 的下单顺序，需保留”折扣资格判断与 pending 订单创建在同一事务内完成”的约束，不能回退为先查资格、后单独插入订单。
@@ -156,7 +166,16 @@
 
 ---
 
-### `router/api-router.go`
+### `setting/operation_setting/payment_setting.go`
+
+- **改动**：`PaymentSetting` struct 新增两个字段：
+  - `AmountOptionNames []string \`json:"amount_option_names"\`` — 每个充值档位的展示名称，与 `AmountOptions` 一一对应
+  - `AmountOptionDescs []string \`json:"amount_option_descs"\`` — 每个充值档位的副标题描述，与 `AmountOptions` 一一对应
+- **风险点**：上游若修改 `PaymentSetting` 结构体，merge 时确认两个新字段仍存在且 JSON key 无冲突。
+
+---
+
+
 
 - **改动**：在现有路由末尾新增：
   - `POST /api/auth/logout` — 前端 POST 登出的别名
@@ -212,7 +231,8 @@
 | `web/src/helpers/safeHtml.jsx` | 新增 `sanitizeRichTextHtml` / `renderMarkdownToSafeHtml` / `SafeHtml`，统一收口富文本渲染的 XSS 面 |
 | `web/src/components/auth/RegisterForm.jsx` | 支持 `kol_token` URL 参数，注册时传递给后端 |
 | `web/src/components/layout/SiderBar.jsx` | 新增"达人中心"和"审核中心"菜单组（按 group/role 显示） |
-| `web/src/components/settings/PaymentSetting.jsx` | 删除 `StripePriceId` 初始 state |
+| `web/src/components/settings/PaymentSetting.jsx` | 删除 `StripePriceId` 初始 state；新增 `AmountOptionNames` / `AmountOptionDescs` 初始 state 及对应 switch case（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`） |
+| `web/src/pages/Setting/Payment/SettingsGeneralPayment.jsx` | 新增 `AmountOptionNames` / `AmountOptionDescs` state、验证、提交逻辑（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`）及 TextArea UI 组件 |
 | `web/src/components/table/users/UsersColumnDefs.jsx` | 用户列表新增 KOL 字段列 |
 | `web/src/components/table/users/UsersTable.jsx` | 配合上述列变更 |
 | `web/src/components/common/DocumentRenderer/index.jsx` | HTML 文档页不再直接注入原始 HTML，统一改为白名单清洗后的安全渲染 |

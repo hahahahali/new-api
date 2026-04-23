@@ -153,7 +153,7 @@ func GetPublicTopupPackages(c *gin.Context) {
 		}
 		packages = append(packages, PackageInfo{
 			Amount:      amount,
-			Credits:     amount * 25,
+			Credits:     amount,
 			Price:       strconv.FormatFloat(payMoney, 'f', 2, 64),
 			Name:        name,
 			Description: desc,
