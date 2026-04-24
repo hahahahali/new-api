@@ -20,7 +20,7 @@
 | `service/withdrawal.go` | CreateWithdrawalTransfer — Stripe Connect 打款封装（已停用，保留注释） |
 | `setting/payment_commission.go` | KolCommissionRate=0.20、StripeConnectEnabled=false、MinWithdrawalAmount=5.0 |
 | `setting/payment_stripe_connect.go` | StripeConnectClientId 配置变量 |
-| `common/email_templates.go` | 4类多语言邮件模板（zh/en/ja/fr/es）：验证码、审核通过、审核拒绝、打款通知 |
+| `common/email_templates.go` | 6类多语言邮件模板（zh/en/ja/fr/es）：注册验证码、密码重置、达人申请验证码、审核通过、审核拒绝、打款通知 |
 | `controller/topup_packages.go` | 公开充值套餐接口 `GetPublicTopupPackages` + 多语言辅助函数 `resolveI18nNames` / `localizedAmountOptions`；从上游 `controller/topup.go` 拆出以最小化上游合并冲突面 |
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
@@ -215,6 +215,16 @@
 - **改动**：`TestMain` 的 `AutoMigrate(...)` 列表尾部追加 `&model.CommissionRecord{}` 和 `&model.TopUp{}`；`truncate` 的 `model.DB.Exec` 序列追加 `DELETE FROM commission_records` 与 `DELETE FROM top_ups`。
 - **原因**：KOL 佣金系统在任务计费路径上会查询 `commission_records` 与 `top_ups` 表，若测试库未建表则计费相关测试失败。
 - **风险点**：上游若修改该测试文件（如调整 AutoMigrate 列表或清理流程），merge 时必须保留两张表的注册与 DELETE 语句；后续若再新增与计费相关的模型，应在此处同步追加。
+
+---
+
+### `controller/misc.go`
+
+- **位置**：`SendEmailVerification()` 和 `SendPasswordResetEmail()` 两个函数内
+- **改动 1**（`SendEmailVerification`）：删除原本硬编码的中文邮件主题/正文赋值，改为读取 `lang` 查询参数（`c.DefaultQuery("lang", "zh")`）并调用 `common.BuildRegistrationVerificationEmail(lang, ...)` 多语言模板。
+- **改动 2**（`SendPasswordResetEmail`）：同上，改为调用 `common.BuildPasswordResetEmail(lang, ...)`。
+- **背景**：前端 `api.js` 已在发送验证码/重置密码请求时附带 `&lang=<locale>` 参数，但后端两个函数之前硬编码中文，导致切换语言后收到的邮件仍为中文。两个多语言模板函数（zh/en/ja/fr/es）已实现在 `common/email_templates.go`（我方新增文件）中，`misc.go` 仅增加 2 行 lang 读取 + 1 行模板调用，改动范围最小化。
+- **⚠️ 风险点（同步必查）**：上游若修改 `SendEmailVerification` 或 `SendPasswordResetEmail` 的邮件发送逻辑，merge 时需保留"读取 `lang` 参数 + 调用 `common.Build*Email`"的两行，不能回退为硬编码中文内容。
 
 ---
 

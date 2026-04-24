@@ -195,6 +195,97 @@ func BuildAffiliateRejectionEmail(lang, name, systemName, reason string) (subjec
 	return
 }
 
+// BuildRegistrationVerificationEmail returns subject and HTML body for the registration email verification code.
+func BuildRegistrationVerificationEmail(lang, systemName, code string, validMinutes int) (subject, content string) {
+	lang = normalizeEmailLang(lang)
+	switch lang {
+	case "zh":
+		subject = fmt.Sprintf("【%s】邮箱验证码", systemName)
+		content = fmt.Sprintf(`<p>您好，</p>
+<p>您正在进行 <strong>%s</strong> 邮箱验证。</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>验证码 <strong>%d 分钟</strong>内有效，如非本人操作请忽略。</p>`,
+			systemName, code, validMinutes)
+	case "ja":
+		subject = fmt.Sprintf("【%s】メール認証コード", systemName)
+		content = fmt.Sprintf(`<p>こんにちは、</p>
+<p><strong>%s</strong> のメール認証を行っています。</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>このコードは <strong>%d分間</strong> 有効です。お心当たりのない場合は無視してください。</p>`,
+			systemName, code, validMinutes)
+	case "fr":
+		subject = fmt.Sprintf("【%s】Code de vérification", systemName)
+		content = fmt.Sprintf(`<p>Bonjour,</p>
+<p>Vous effectuez une vérification d'e-mail sur <strong>%s</strong>.</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Ce code est valable <strong>%d minutes</strong>. Ignorez ce message si vous n'êtes pas à l'origine de cette demande.</p>`,
+			systemName, code, validMinutes)
+	case "es":
+		subject = fmt.Sprintf("【%s】Código de verificación", systemName)
+		content = fmt.Sprintf(`<p>Hola,</p>
+<p>Está verificando su dirección de correo en <strong>%s</strong>.</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Este código es válido durante <strong>%d minutos</strong>. Si no realizó esta acción, ignore este correo.</p>`,
+			systemName, code, validMinutes)
+	default: // en
+		subject = fmt.Sprintf("【%s】Email verification code", systemName)
+		content = fmt.Sprintf(`<p>Hello,</p>
+<p>You are verifying your email address on <strong>%s</strong>.</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>This code is valid for <strong>%d minutes</strong>. If you did not request this, please ignore this email.</p>`,
+			systemName, code, validMinutes)
+	}
+	return
+}
+
+// BuildPasswordResetEmail returns subject and HTML body for the password reset email.
+func BuildPasswordResetEmail(lang, systemName, link string, validMinutes int) (subject, content string) {
+	lang = normalizeEmailLang(lang)
+	switch lang {
+	case "zh":
+		subject = fmt.Sprintf("【%s】密码重置", systemName)
+		content = fmt.Sprintf(`<p>您好，</p>
+<p>您正在进行 <strong>%s</strong> 密码重置，请点击以下链接完成操作：</p>
+<p><a href="%s">%s</a></p>
+<p>如链接无法点击，请复制到浏览器打开：<br>%s</p>
+<p>链接 <strong>%d 分钟</strong>内有效，如非本人操作请忽略。</p>`,
+			systemName, link, link, link, validMinutes)
+	case "ja":
+		subject = fmt.Sprintf("【%s】パスワードリセット", systemName)
+		content = fmt.Sprintf(`<p>こんにちは、</p>
+<p><strong>%s</strong> のパスワードリセットを行っています。以下のリンクをクリックしてください：</p>
+<p><a href="%s">%s</a></p>
+<p>リンクが開けない場合は、以下のURLをブラウザにコピーしてください：<br>%s</p>
+<p>このリンクは <strong>%d分間</strong> 有効です。</p>`,
+			systemName, link, link, link, validMinutes)
+	case "fr":
+		subject = fmt.Sprintf("【%s】Réinitialisation du mot de passe", systemName)
+		content = fmt.Sprintf(`<p>Bonjour,</p>
+<p>Vous avez demandé une réinitialisation de mot de passe sur <strong>%s</strong>. Cliquez sur le lien ci-dessous :</p>
+<p><a href="%s">%s</a></p>
+<p>Si le lien ne s'ouvre pas, copiez cette adresse dans votre navigateur :<br>%s</p>
+<p>Ce lien est valable <strong>%d minutes</strong>. Ignorez ce message si vous n'avez pas fait cette demande.</p>`,
+			systemName, link, link, link, validMinutes)
+	case "es":
+		subject = fmt.Sprintf("【%s】Restablecimiento de contraseña", systemName)
+		content = fmt.Sprintf(`<p>Hola,</p>
+<p>Está restableciendo su contraseña en <strong>%s</strong>. Haga clic en el siguiente enlace:</p>
+<p><a href="%s">%s</a></p>
+<p>Si el enlace no funciona, cópielo en su navegador:<br>%s</p>
+<p>Este enlace es válido durante <strong>%d minutos</strong>. Si no realizó esta acción, ignore este correo.</p>`,
+			systemName, link, link, link, validMinutes)
+	default: // en
+		subject = fmt.Sprintf("【%s】Password reset", systemName)
+		content = fmt.Sprintf(`<p>Hello,</p>
+<p>You requested a password reset on <strong>%s</strong>. Click the link below to proceed:</p>
+<p><a href="%s">%s</a></p>
+<p>If the link doesn't open, copy the following address into your browser:<br>%s</p>
+<p>This link is valid for <strong>%d minutes</strong>. If you did not request this, please ignore this email.</p>`,
+			systemName, link, link, link, validMinutes)
+	}
+	return
+}
+
 // BuildWithdrawalPaidEmail returns subject and HTML body for the withdrawal payment notification.
 func BuildWithdrawalPaidEmail(lang, username, systemName string, amount float64, txId string) (subject, content string) {
 	lang = normalizeEmailLang(lang)
