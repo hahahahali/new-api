@@ -26,6 +26,8 @@ func GetTopUpInfo(c *gin.Context) {
 	// 获取支付方式
 	payMethods := operation_setting.PayMethods
 
+	amountOptionNames, amountOptionDescs := localizedAmountOptions(c)
+
 	// 如果启用了 Stripe 支付，添加到支付方法列表
 	if isStripeTopUpEnabled() {
 		// 检查是否已经包含 Stripe
@@ -109,64 +111,11 @@ func GetTopUpInfo(c *gin.Context) {
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
-		"amount_option_names":     operation_setting.GetPaymentSetting().AmountOptionNames,
-		"amount_option_descs":     operation_setting.GetPaymentSetting().AmountOptionDescs,
+		"amount_option_names":     amountOptionNames,
+		"amount_option_descs":     amountOptionDescs,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 	}
 	common.ApiSuccess(c, data)
-}
-
-// GetPublicTopupPackages returns Stripe topup packages with default-group pricing.
-// No authentication required — only final computed prices are exposed, no internal config.
-func GetPublicTopupPackages(c *gin.Context) {
-	if setting.StripeApiSecret == "" || setting.StripeWebhookSecret == "" {
-		common.ApiErrorMsg(c, "Stripe not configured")
-		return
-	}
-
-	amountOptions := operation_setting.GetPaymentSetting().AmountOptions
-
-	type PackageInfo struct {
-		Amount      int    `json:"amount"`
-		Credits     int    `json:"credits"`
-		Price       string `json:"price"`
-		Tag         string `json:"tag,omitempty"`
-		Name        string `json:"name,omitempty"`
-		Description string `json:"description,omitempty"`
-	}
-
-	amountOptionNames := operation_setting.GetPaymentSetting().AmountOptionNames
-	amountOptionDescs := operation_setting.GetPaymentSetting().AmountOptionDescs
-	packages := make([]PackageInfo, 0, len(amountOptions))
-	for i, amount := range amountOptions {
-		payMoney := getStripePayMoney(float64(amount), "default")
-		if payMoney <= 0 {
-			continue
-		}
-		name := ""
-		if i < len(amountOptionNames) {
-			name = amountOptionNames[i]
-		}
-		desc := ""
-		if i < len(amountOptionDescs) {
-			desc = amountOptionDescs[i]
-		}
-		packages = append(packages, PackageInfo{
-			Amount:      amount,
-			Credits:     amount,
-			Price:       strconv.FormatFloat(payMoney, 'f', 2, 64),
-			Name:        name,
-			Description: desc,
-		})
-	}
-
-	n := len(packages)
-	if n >= 2 {
-		packages[n-2].Tag = "最受欢迎"
-		packages[n-1].Tag = "最划算"
-	}
-
-	common.ApiSuccess(c, gin.H{"packages": packages})
 }
 
 type EpayRequest struct {

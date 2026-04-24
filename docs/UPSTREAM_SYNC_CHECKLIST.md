@@ -85,6 +85,18 @@ SQLite migrator（`glebarez/sqlite`）在 schema 存在历史差异时（如 uni
 - 上游若新增 `marked.parse(...)+dangerouslySetInnerHTML` 的页面，必须改接 `renderMarkdownToSafeHtml()` 或 `SafeHtml`。
 - 上游若修改这些页面的富文本渲染逻辑，确认没有回退为原始 HTML 直出。
 
+### 3.2 GetTopUpInfo / GetPublicTopupPackages — 多语言套餐名称读取路径
+
+**文件**：`controller/topup_packages.go`（新建文件，含 `resolveI18nNames` / `localizedAmountOptions` / `GetPublicTopupPackages`）；`controller/topup.go` 中 `GetTopUpInfo` 仅保留 1 行 `localizedAmountOptions(c)` 调用。
+**规则**：`GetTopUpInfo`（已登录充值页）和 `GetPublicTopupPackages`（公开落地页）均通过 `localizedAmountOptions(c)` 统一走 `common.OptionMapRWMutex.RLock()` 读取原始 OptionMap 字符串，再调用 `resolveI18nNames(raw, lang)` 解析；**不能**回退为 `operation_setting.GetPaymentSetting().AmountOptionNames/Descs`（该 `[]string` 字段在存储多语言 JSON 对象 `{"zh":[...],"en":[...]}` 时会静默返回 nil）。
+
+**同步时检查**：
+- 上游若修改 `GetTopUpInfo` 的响应组装逻辑（响应 map 中的 `amount_option_names`/`amount_option_descs` 两个 key），需保留对 `localizedAmountOptions(c)` 的调用，以及 `?lang=` 参数支持。
+- 上游若修改 `GetPublicTopupPackages` 的守卫条件，需保持改为 `setting.StripeUnitPrice <= 0`（原始条件为 `StripeApiSecret == "" || StripeWebhookSecret == ""`，该条件过严）。
+- `resolveI18nNames` 和 `localizedAmountOptions` 位于 `controller/topup_packages.go`（我们新建的文件，上游不会修改），回退策略：指定语言 → "zh" → 第一个可用语言 → nil。
+
+---
+
 ### 4. ProcessCommission 钩子 — 支付回调中的佣金触发
 
 **文件**：`controller/topup.go`、`controller/topup_creem.go`、`controller/topup_stripe.go`、`controller/topup_waffo.go`

@@ -107,7 +107,7 @@ export default function SettingsGeneralPayment(props) {
       inputs.AmountOptionNames.trim() !== '' &&
       !verifyJSON(inputs.AmountOptionNames)
     ) {
-      showError(t('套餐名称配置不是合法的 JSON 数组'));
+      showError(t('套餐名称配置不是合法的 JSON 格式'));
       return;
     }
 
@@ -116,7 +116,7 @@ export default function SettingsGeneralPayment(props) {
       inputs.AmountOptionDescs.trim() !== '' &&
       !verifyJSON(inputs.AmountOptionDescs)
     ) {
-      showError(t('套餐副标题配置不是合法的 JSON 数组'));
+      showError(t('套餐副标题配置不是合法的 JSON 格式'));
       return;
     }
 
@@ -278,11 +278,11 @@ export default function SettingsGeneralPayment(props) {
                 field='AmountOptionNames'
                 label={t('套餐名称配置')}
                 placeholder={t(
-                  '为一个 JSON 数组，与充值数量选项一一对应，例如：["Starter", "Basic", "Pro", "Flagship"]',
+                  '支持 JSON 数组或多语言对象，例如：["Starter", "Basic"] 或 {"zh": ["入门版"], "en": ["Starter"]}',
                 )}
                 autosize
                 extraText={t(
-                  '设置每个充值档位的展示名称，顺序需与自定义充值数量选项保持一致，例如：["Starter", "Basic", "Pro", "Flagship"]',
+                  '支持多语言格式，例如：{"zh": ["入门版", "基础版"], "en": ["Starter", "Basic"]}',
                 )}
               />
             </Col>
@@ -293,11 +293,11 @@ export default function SettingsGeneralPayment(props) {
                 field='AmountOptionDescs'
                 label={t('套餐副标题配置')}
                 placeholder={t(
-                  '为一个 JSON 数组，与充值数量选项一一对应，例如：["适合初次体验", "适合个人爱好者", "适合专业创作者", "适合高频用户"]',
+                  '支持 JSON 数组或多语言对象，例如：["适合初次体验", "适合个人爱好者"] 或 {"zh": ["适合初次体验"], "en": ["For beginners"]}',
                 )}
                 autosize
                 extraText={t(
-                  '设置每个充值档位卡片下方的描述文字，顺序需与自定义充值数量选项保持一致',
+                  '支持多语言格式，例如：{"zh": ["适合初次体验", "适合个人爱好者"], "en": ["Perfect for beginners", "For hobbyists"]}',
                 )}
               />
             </Col>

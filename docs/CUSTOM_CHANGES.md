@@ -21,6 +21,7 @@
 | `setting/payment_commission.go` | KolCommissionRate=0.20、StripeConnectEnabled=false、MinWithdrawalAmount=5.0 |
 | `setting/payment_stripe_connect.go` | StripeConnectClientId 配置变量 |
 | `common/email_templates.go` | 4类多语言邮件模板（zh/en/ja/fr/es）：验证码、审核通过、审核拒绝、打款通知 |
+| `controller/topup_packages.go` | 公开充值套餐接口 `GetPublicTopupPackages` + 多语言辅助函数 `resolveI18nNames` / `localizedAmountOptions`；从上游 `controller/topup.go` 拆出以最小化上游合并冲突面 |
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
 | `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
@@ -148,21 +149,22 @@
   - **解耦原则**：保留上游 `genStripeLink` 完整签名与函数体，意味着上游对该函数的任何修改（bug fix、Stripe SDK 升级）都能 merge 干净；我们的实现走完全独立的 `genStripeLinkPriceData`，互不影响。
 - **改动 3**：`topup.go` / `topup_stripe.go` 创建充值订单时，改为通过 `service.CreatePendingTopUpWithKolRebate()` 在事务内先锁定 invitee、按”已成功佣金单 + 当前 pending 充值单”计算推荐折扣资格，再落 pending 订单，堵住并发/提前下单绕过”前 3 单折扣”限制的问题；若拉起支付失败则立即将该 pending 订单标记为 `failed` 释放名额。
 - **改动 4**（仅 `topup.go`）：新增 `GetPublicTopupPackages()` — 无需鉴权的充值套餐接口，供落地页未登录访客查看实时定价。
+  - **已拆离到 `controller/topup_packages.go`**：该函数及其私有辅助函数 `resolveI18nNames` / `localizedAmountOptions` 已全部迁移到新文件，上游 `controller/topup.go` 里只保留 `GetTopUpInfo` 顶部一行 `localizedAmountOptions(c)` 调用和响应 map 里两个字段。此拆分**将本条改动与上游 `topup.go` 的冲突面从 ~60 行降到 ~2 行**。
   - `PackageInfo` 新增 `Name string` 和 `Description string` 字段，分别来自 `AmountOptionNames` / `AmountOptionDescs` 配置，供落地页展示套餐标题和副标题。
   - `Credits` 字段直接等于 `amount`（即 `AmountOptions` 里的原始值），不再乘以 25；站点通过 `AmountOptions` 直接配置积分数量，无需换算。
   - `GetTopUpInfo` 同步返回 `amount_option_names` 和 `amount_option_descs` 字段，供已登录的充值页面使用。
-  - 使用 `getStripePayMoney(amount, “default”)` 计算标准价格（不含 KOL 折扣），仅返回最终价格，不暴露折扣表、StripeUnitPrice 等内部配置；Stripe 未配置时返回错误。
+  - 使用 `getStripePayMoney(amount, "default")` 计算标准价格（不含 KOL 折扣），仅返回最终价格，不暴露折扣表、StripeUnitPrice 等内部配置；Stripe 未配置时返回错误。
+- **改动 5**（仅 `topup_packages.go`，新文件）：多语言套餐名称/描述支持。
+  - `resolveI18nNames(raw, lang string) []string`：兼容纯 `[]string` 和多语言对象 `{"zh":[...],"en":[...]}` 两种存储格式；回退策略：指定语言 → "zh" → 第一个可用语言 → nil。
+  - `GetPublicTopupPackages` 守卫条件由 `StripeApiSecret == "" || StripeWebhookSecret == ""` 改为 `setting.StripeUnitPrice <= 0`（价格展示不依赖 Stripe 密钥）。
+  - `GetPublicTopupPackages` 与 `GetTopUpInfo` 均通过 `localizedAmountOptions(c)` 统一走 `common.OptionMapRWMutex.RLock()` 读取原始 `OptionMap` 字符串，再调用 `resolveI18nNames` 解析；两个接口均支持 `?lang=` 查询参数。
 - **⚠️ 风险点**：
   - 上游若新增支付渠道或修改回调流程，只需在成功分支加一行 3 参数调用即可接入佣金系统。
   - 上游若修改 `RequestPay` / `RequestEpay` 的下单顺序，需保留”折扣资格判断与 pending 订单创建在同一事务内完成”的约束，不能回退为先查资格、后单独插入订单。
   - `topup.go` 中 `enable_stripe_topup` 检查已去除 `StripePriceId` 依赖，仅校验 `StripeApiSecret` + `StripeWebhookSecret`。`model/option.go` 已删除 `StripePriceId` 的 InitOptionMap/UpdateOption 注册，前端设置页（`SettingsPaymentGatewayStripe.jsx`、`PaymentSetting.jsx`）也删除了输入字段。**`setting/payment_stripe.go` 中 `var StripePriceId = “”` 已恢复并保留**——仅作为编译兼容存根存在，让上游 `genStripeLink` 函数体能编译通过；运行时该变量始终为空，我们的支付链路不依赖它。`model/subscription.go` 中各套餐自有的 `StripePriceId` 字段不受影响。
   - 上游若修改 `getStripePayMoney` 签名或 `AmountOptions` 结构，`GetPublicTopupPackages` 需同步调整。
   - `Credits` 字段语义已从”amount × 25 换算后的 token 数”改为”直接等于 amount”；如果未来需要换算比例，请修改 `GetPublicTopupPackages` 内的计算逻辑，**不要**回退为 `amount * 25`。
-- **风险点**：
-  - 上游若新增支付渠道或修改回调流程，只需在成功分支加一行 3 参数调用即可接入佣金系统。
-  - 上游若修改 `RequestPay` / `RequestEpay` 的下单顺序，需保留”折扣资格判断与 pending 订单创建在同一事务内完成”的约束，不能回退为先查资格、后单独插入订单。
-  - `topup.go` 中 `enable_stripe_topup` 检查已去除 `StripePriceId` 依赖，仅校验 `StripeApiSecret` + `StripeWebhookSecret`。`model/option.go` 已删除 `StripePriceId` 的 InitOptionMap/UpdateOption 注册，前端设置页（`SettingsPaymentGatewayStripe.jsx`、`PaymentSetting.jsx`）也删除了输入字段。**`setting/payment_stripe.go` 中 `var StripePriceId = ""` 已恢复并保留**——仅作为编译兼容存根存在，让上游 `genStripeLink` 函数体能编译通过；运行时该变量始终为空，我们的支付链路不依赖它。`model/subscription.go` 中各套餐自有的 `StripePriceId` 字段不受影响。
-  - 上游若修改 `getStripePayMoney` 签名或 `AmountOptions` 结构，`GetPublicTopupPackages` 需同步调整。
+  - 上游若修改 `GetTopUpInfo` 或 `GetPublicTopupPackages` 的响应组装逻辑，需保留”持 RLock 读取原始 OptionMap + resolveI18nNames 调用”的路径，**不能**回退为 `operation_setting.GetPaymentSetting().AmountOptionNames/Descs`（该 `[]string` 字段在存储多语言 JSON 对象时会静默返回 nil）。
 
 ---
 
@@ -175,7 +177,7 @@
 
 ---
 
-
+### `router/api-router.go`
 
 - **改动**：在现有路由末尾新增：
   - `POST /api/auth/logout` — 前端 POST 登出的别名
@@ -244,7 +246,7 @@
 | `web/src/components/topup/modals/TopupHistoryModal.jsx` | 引入 `useSecureVerification`，手动补单（`POST /api/user/topup/complete`）前强制触发二次身份校验 |
 | `web/src/helpers/auth.jsx` | 新增 `ReviewerRoute` 路由守卫 |
 | `web/src/helpers/utils.jsx` | 新增 `isReviewer()` 工具函数 |
-| `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}` |
+| `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}`；`StripeUnitPrice` 输入框 `precision` 从 `2` 改为 `5`，支持填写 0.08167 这类 5 位小数单价（后端 `StripeUnitPrice` 为 `float64`，天然支持；merge 上游时若该行被改动，需保留 `precision={5}`） |
 | `web/src/pages/KolDashboard/index.jsx` | （新增文件）"返佣比例"卡片改为实时显示 `commission_rate * 100 - rebateRate`，随推荐折扣滑块联动更新，反映让利后的净佣金比例 |
 | `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key；补充"推荐折扣"、"推荐折扣已更新"及折扣说明/示例文案 key |
 
