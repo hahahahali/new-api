@@ -22,7 +22,7 @@
 | `setting/payment_stripe_connect.go` | StripeConnectClientId 配置变量 |
 | `common/email_templates.go` | 6类多语言邮件模板（zh/en/ja/fr/es）：注册验证码、密码重置、达人申请验证码、审核通过、审核拒绝、打款通知 |
 | `controller/topup_packages.go` | 公开充值套餐接口 `GetPublicTopupPackages` + 多语言辅助函数 `resolveI18nNames` / `localizedAmountOptions`；从上游 `controller/topup.go` 拆出以最小化上游合并冲突面 |
-| `model/topup_quota_custom.go` | `CalcQuotaByAmount(topUp)` — 基于套餐积分数（`Amount × 408.35`）计算 quota，使折扣仅影响价格不影响用户获得的积分数；`CreditDivisor()` — 返回冻结的 quota → 显示积分除数（408.35），调价不影响已有余额显示 |
+| `model/topup_quota_custom.go` | `CalcQuotaByAmount(topUp)` — 基于套餐积分数（`Amount × 5000`）计算 quota，使折扣仅影响价格不影响用户获得的积分数；`CreditDivisor()` — 返回冻结的 quota → 显示积分除数（5000 = QuotaPerUnit/100），确保与前端 `model_price×100` 的模型费用显示一致 |
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
 | `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
@@ -134,7 +134,7 @@
 
 - **位置**：`TopUp` struct 字段定义
 - **改动**：新增 `OriginalMoney float64` 字段（`gorm:"default:0"`），存储折扣前原价（USD），供 ProcessCommission 计算净佣金使用。
-- **改动 2**：`Recharge()` 函数第 133 行，充值 quota 计算公式从 `topUp.Money * common.QuotaPerUnit` 改为 `CalcQuotaByAmount(topUp)`（定义在新文件 `model/topup_quota_custom.go`）。原公式使用折扣后的实付金额计算 quota，导致不同折扣率的套餐充值后用户获得的积分数不等于套餐标称值（如 6000 积分套餐实际只显示 122.5）。新公式使用冻结乘数 `Amount × 408.35`，确保"买 N 积分就得 N 积分"，折扣仅影响价格；乘数冻结后 StripeUnitPrice 调价不影响已有余额的积分显示。
+- **改动 2**：`Recharge()` 函数第 133 行，充值 quota 计算公式从 `topUp.Money * common.QuotaPerUnit` 改为 `CalcQuotaByAmount(topUp)`（定义在新文件 `model/topup_quota_custom.go`）。原公式使用折扣后的实付金额计算 quota，导致不同折扣率的套餐充值后用户获得的积分数不等于套餐标称值（如 6000 积分套餐实际只显示 122.5）。新公式使用冻结乘数 `Amount × 5000`（= QuotaPerUnit/100），确保"买 N 积分就得 N 积分"且与前端 `model_price×100` 模型费用显示一致；乘数冻结后 StripeUnitPrice 调价不影响已有余额的积分显示。
 - **迁移说明**：`TopUp` 表保留在所有数据库路径的 `AutoMigrate` 列表中，新列会自动添加，无需手工 `ALTER TABLE`。
 - **⚠️ 风险点（同步必查）**：上游若修改 TopUp struct（如新增字段或修改类型），确认 OriginalMoney 字段仍存在且顺序无冲突。
 
