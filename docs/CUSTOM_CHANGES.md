@@ -148,6 +148,7 @@
   - `RequestAmount` 同步返回 `original`（原价）和 `rebate_rate`（KOL 推荐折扣率）字段。
   - **解耦原则**：保留上游 `genStripeLink` 完整签名与函数体，意味着上游对该函数的任何修改（bug fix、Stripe SDK 升级）都能 merge 干净；我们的实现走完全独立的 `genStripeLinkPriceData`，互不影响。
 - **改动 3**：`topup.go` / `topup_stripe.go` 创建充值订单时，改为通过 `service.CreatePendingTopUpWithKolRebate()` 在事务内先锁定 invitee、按”已成功佣金单 + 当前 pending 充值单”计算推荐折扣资格，再落 pending 订单，堵住并发/提前下单绕过”前 3 单折扣”限制的问题；若拉起支付失败则立即将该 pending 订单标记为 `failed` 释放名额。
+- **改动 6**（新文件 `controller/topup_stripe_guard.go` + `router/api-router.go` 1 行 + `topup_stripe.go` 1 处数值）：新增 `GuardedRequestStripePay` 包装函数，在调用上游 `RequestPay` 之前校验 `Amount` 是否在 `AmountOptions` 白名单中。路由 `/stripe/pay` 从 `RequestStripePay` 改为 `GuardedRequestStripePay`（`api-router.go` 仅改 1 行）。同时将 `topup_stripe.go` 中 `RequestPay` 内的硬编码上限从 `10000` 放宽为 `10000000`（仅改 1 个数字），使其不再阻断合法大额套餐；实际金额校验由 guard 的 `AmountOptions` 白名单负责。修复原因：`AmountOptions` 可配置超过 10000 的值（如 180000），上游硬编码上限导致大额套餐支付被拒。
 - **改动 4**（仅 `topup.go`）：新增 `GetPublicTopupPackages()` — 无需鉴权的充值套餐接口，供落地页未登录访客查看实时定价。
   - **已拆离到 `controller/topup_packages.go`**：该函数及其私有辅助函数 `resolveI18nNames` / `localizedAmountOptions` 已全部迁移到新文件，上游 `controller/topup.go` 里只保留 `GetTopUpInfo` 顶部一行 `localizedAmountOptions(c)` 调用和响应 map 里两个字段。此拆分**将本条改动与上游 `topup.go` 的冲突面从 ~60 行降到 ~2 行**。
   - `PackageInfo` 新增 `Name string` 和 `Description string` 字段，分别来自 `AmountOptionNames` / `AmountOptionDescs` 配置，供落地页展示套餐标题和副标题。
@@ -225,6 +226,14 @@
 - **改动 2**（`SendPasswordResetEmail`）：同上，改为调用 `common.BuildPasswordResetEmail(lang, ...)`。
 - **背景**：前端 `api.js` 已在发送验证码/重置密码请求时附带 `&lang=<locale>` 参数，但后端两个函数之前硬编码中文，导致切换语言后收到的邮件仍为中文。两个多语言模板函数（zh/en/ja/fr/es）已实现在 `common/email_templates.go`（我方新增文件）中，`misc.go` 仅增加 2 行 lang 读取 + 1 行模板调用，改动范围最小化。
 - **⚠️ 风险点（同步必查）**：上游若修改 `SendEmailVerification` 或 `SendPasswordResetEmail` 的邮件发送逻辑，merge 时需保留"读取 `lang` 参数 + 调用 `common.Build*Email`"的两行，不能回退为硬编码中文内容。
+
+---
+
+### `controller/payment_webhook_availability.go`
+
+- **改动**：`isStripeTopUpEnabled()` 移除 `StripePriceId != ""` 条件，仅保留 `StripeApiSecret` + `StripeWebhookSecret` 两项校验。原因：项目已改用 `genStripeLinkPriceData`（动态定价），不再使用全局 `StripePriceId`；而 `StripePriceId` 已从 `InitOptionMap` / `UpdateOption` 中删除，`setting.StripePriceId` 始终为空，导致 `isStripeWebhookEnabled()` 永远返回 `false`，Stripe webhook 被 403 拒绝，用户付款后积分无法到账。
+- **同步修改**：`payment_webhook_availability_test.go` 中 `TestStripeWebhookEnabledRequiresTopUpAndWebhookConfig` 同步去除 `StripePriceId` 相关保存/恢复/断言。
+- **⚠️ 风险点（同步必查）**：上游若修改 `isStripeTopUpEnabled` 条件（如新增其他必填配置项），merge 时需确认不恢复 `StripePriceId` 条件。
 
 ---
 
