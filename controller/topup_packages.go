@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -98,5 +99,5 @@ func GetPublicTopupPackages(c *gin.Context) {
 		packages[n-1].Tag = "最划算"
 	}
 
-	common.ApiSuccess(c, gin.H{"packages": packages})
+	common.ApiSuccess(c, gin.H{"packages": packages, "credit_divisor": model.CreditDivisor()})
 }
