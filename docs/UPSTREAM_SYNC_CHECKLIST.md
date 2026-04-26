@@ -95,6 +95,16 @@ SQLite migrator（`glebarez/sqlite`）在 schema 存在历史差异时（如 uni
 - 上游若修改 `GetPublicTopupPackages` 的守卫条件，需保持改为 `setting.StripeUnitPrice <= 0`（原始条件为 `StripeApiSecret == "" || StripeWebhookSecret == ""`，该条件过严）。
 - `resolveI18nNames` 和 `localizedAmountOptions` 位于 `controller/topup_packages.go`（我们新建的文件，上游不会修改），回退策略：指定语言 → "zh" → 第一个可用语言 → nil。
 
+### 3.3 管理员调额 UI 默认按积分输入
+
+**文件**：`web/src/components/table/users/modals/EditUserModal.jsx`、`web/src/helpers/creditQuota.js`
+**规则**：管理员“调整额度”弹窗默认输入语义已从“金额”改为“积分”，并保留“金额输入”“原生额度输入”两个高级折叠项。最终提交给 `/api/user/manage` 的仍是 raw quota。
+
+**同步时检查**：
+- 上游若修改 `EditUserModal` 的调额弹窗，确认默认主输入仍是“积分”，不要回退成“金额”。
+- 上游若修改 `quota_per_unit` 前端读取逻辑，确认 `creditQuota.js` 中 `getCreditDivisor()` 的 `quotaPerUnit / 100` 推导仍成立。
+- 上游若新增管理员调额 API 字段，保持现有 `/api/user/manage` 的 raw quota 提交路径不变，避免前后端口径再次分叉。
+
 ---
 
 ### 4. ProcessCommission 钩子 — 支付回调中的佣金触发

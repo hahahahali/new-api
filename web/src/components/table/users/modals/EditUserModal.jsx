@@ -23,13 +23,17 @@ import {
   API,
   showError,
   showSuccess,
-  renderQuota,
   getCurrencyConfig,
 } from '../../../../helpers';
 import {
   quotaToDisplayAmount,
   displayAmountToQuota,
 } from '../../../../helpers/quota';
+import {
+  quotaToCredits,
+  creditsToQuota,
+  formatCredits,
+} from '../../../../helpers/creditQuota';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
   Button,
@@ -65,6 +69,7 @@ const EditUserModal = (props) => {
   const userId = props.editingUser.id;
   const [loading, setLoading] = useState(true);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustCreditsLocal, setAdjustCreditsLocal] = useState('');
   const [adjustQuotaLocal, setAdjustQuotaLocal] = useState('');
   const [adjustAmountLocal, setAdjustAmountLocal] = useState('');
   const [adjustMode, setAdjustMode] = useState('add');
@@ -73,6 +78,7 @@ const EditUserModal = (props) => {
   const [groupOptions, setGroupOptions] = useState([]);
   const [bindingModalVisible, setBindingModalVisible] = useState(false);
   const formApiRef = useRef(null);
+  const [showAdjustAmountInput, setShowAdjustAmountInput] = useState(false);
   const [showAdjustQuotaRaw, setShowAdjustQuotaRaw] = useState(false);
   const [showQuotaInput, setShowQuotaInput] = useState(false);
   const [inputs, setInputs] = useState(null);
@@ -166,9 +172,57 @@ const EditUserModal = (props) => {
     setLoading(false);
   };
 
+  const clearAdjustInputs = () => {
+    setAdjustCreditsLocal('');
+    setAdjustQuotaLocal('');
+    setAdjustAmountLocal('');
+  };
+
+  const syncAdjustFromQuota = (quotaValue) => {
+    const quota = quotaValue === '' || quotaValue == null ? '' : quotaValue;
+    setAdjustQuotaLocal(quota);
+    if (quota === '') {
+      setAdjustCreditsLocal('');
+      setAdjustAmountLocal('');
+      return;
+    }
+    setAdjustCreditsLocal(Number(formatCredits(quotaToCredits(quota))));
+    setAdjustAmountLocal(
+      Number(quotaToDisplayAmount(quota).toFixed(6)),
+    );
+  };
+
+  const syncAdjustFromCredits = (creditsValue) => {
+    const credits = creditsValue === '' || creditsValue == null ? '' : creditsValue;
+    setAdjustCreditsLocal(credits);
+    if (credits === '') {
+      setAdjustQuotaLocal('');
+      setAdjustAmountLocal('');
+      return;
+    }
+    const normalizedCredits = adjustMode === 'override' ? credits : Math.abs(credits);
+    const quota = creditsToQuota(normalizedCredits);
+    setAdjustQuotaLocal(quota);
+    setAdjustAmountLocal(Number(quotaToDisplayAmount(quota).toFixed(6)));
+  };
+
+  const syncAdjustFromAmount = (amountValue) => {
+    const amount = amountValue === '' || amountValue == null ? '' : amountValue;
+    setAdjustAmountLocal(amount);
+    if (amount === '') {
+      setAdjustCreditsLocal('');
+      setAdjustQuotaLocal('');
+      return;
+    }
+    const normalizedAmount = adjustMode === 'override' ? amount : Math.abs(amount);
+    const quota = displayAmountToQuota(normalizedAmount);
+    setAdjustQuotaLocal(quota);
+    setAdjustCreditsLocal(Number(formatCredits(quotaToCredits(quota))));
+  };
+
   /* --------------------- atomic quota adjust -------------------- */
   const adjustQuota = async () => {
-    const quotaVal = parseInt(adjustQuotaLocal) || 0;
+    const quotaVal = Math.round(Number(adjustQuotaLocal || 0));
     if (quotaVal <= 0 && adjustMode !== 'override') return;
     if (adjustMode === 'override' && (adjustQuotaLocal === '' || adjustQuotaLocal == null)) return;
     setAdjustLoading(true);
@@ -183,8 +237,9 @@ const EditUserModal = (props) => {
       if (success) {
         showSuccess(t('调整额度成功'));
         setAdjustModalOpen(false);
-        setAdjustQuotaLocal('');
-        setAdjustAmountLocal('');
+        clearAdjustInputs();
+        setShowAdjustAmountInput(false);
+        setShowAdjustQuotaRaw(false);
         const userRes = await API.get(`/api/user/${userId}`);
         if (userRes.data.success) {
           const data = userRes.data.data;
@@ -206,17 +261,18 @@ const EditUserModal = (props) => {
 
   const getPreviewText = () => {
     const current = formApiRef.current?.getValue('quota') || 0;
-    const val = parseInt(adjustQuotaLocal) || 0;
+    const currentCredits = quotaToCredits(current);
+    const val = Number(adjustCreditsLocal || 0);
     let result;
     switch (adjustMode) {
       case 'add':
-        result = current + Math.abs(val);
-        return `${t('当前额度')}：${renderQuota(current)}，+${renderQuota(Math.abs(val))} = ${renderQuota(result)}`;
+        result = currentCredits + Math.abs(val);
+        return `${t('当前额度')}（${t('积分')}）：${formatCredits(currentCredits)}，+${formatCredits(Math.abs(val))} = ${formatCredits(result)}`;
       case 'subtract':
-        result = current - Math.abs(val);
-        return `${t('当前额度')}：${renderQuota(current)}，-${renderQuota(Math.abs(val))} = ${renderQuota(result)}`;
+        result = currentCredits - Math.abs(val);
+        return `${t('当前额度')}（${t('积分')}）：${formatCredits(currentCredits)}，-${formatCredits(Math.abs(val))} = ${formatCredits(result)}`;
       case 'override':
-        return `${t('当前额度')}：${renderQuota(current)} → ${renderQuota(val)}`;
+        return `${t('当前额度')}（${t('积分')}）：${formatCredits(currentCredits)} → ${formatCredits(val)}`;
       default:
         return '';
     }
@@ -467,9 +523,10 @@ const EditUserModal = (props) => {
         onOk={adjustQuota}
         onCancel={() => {
           setAdjustModalOpen(false);
-          setAdjustQuotaLocal('');
-          setAdjustAmountLocal('');
+          clearAdjustInputs();
           setAdjustMode('add');
+          setShowAdjustAmountInput(false);
+          setShowAdjustQuotaRaw(false);
         }}
         confirmLoading={adjustLoading}
         closable={null}
@@ -494,8 +551,7 @@ const EditUserModal = (props) => {
             value={adjustMode}
             onChange={(e) => {
               setAdjustMode(e.target.value);
-              setAdjustQuotaLocal('');
-              setAdjustAmountLocal('');
+              clearAdjustInputs();
             }}
             style={{ width: '100%' }}
           >
@@ -506,6 +562,30 @@ const EditUserModal = (props) => {
         </div>
         <div className='mb-3'>
           <div className='mb-1'>
+            <Text size='small'>{t('积分')}</Text>
+          </div>
+          <InputNumber
+            placeholder={t('输入积分')}
+            value={adjustCreditsLocal}
+            precision={6}
+            min={adjustMode === 'override' ? undefined : 0}
+            step={1}
+            onChange={syncAdjustFromCredits}
+            style={{ width: '100%' }}
+            showClear
+          />
+        </div>
+        <div
+          className='text-xs cursor-pointer mt-2'
+          style={{ color: 'var(--semi-color-text-2)' }}
+          onClick={() => setShowAdjustAmountInput((v) => !v)}
+        >
+          {showAdjustAmountInput
+            ? `▾ ${t('收起金额输入')}`
+            : `▸ ${t('使用金额输入')}`}
+        </div>
+        <div style={{ display: showAdjustAmountInput ? 'block' : 'none' }} className='mt-2 mb-3'>
+          <div className='mb-1'>
             <Text size='small'>{t('金额')}</Text>
           </div>
           <InputNumber
@@ -515,17 +595,7 @@ const EditUserModal = (props) => {
             precision={6}
             min={adjustMode === 'override' ? undefined : 0}
             step={0.000001}
-            onChange={(val) => {
-              const amount = val === '' || val == null ? '' : val;
-              setAdjustAmountLocal(amount);
-              setAdjustQuotaLocal(
-                amount === ''
-                  ? ''
-                  : adjustMode === 'override'
-                    ? displayAmountToQuota(amount)
-                    : displayAmountToQuota(Math.abs(amount)),
-              );
-            }}
+            onChange={syncAdjustFromAmount}
             style={{ width: '100%' }}
             showClear
           />
@@ -547,17 +617,7 @@ const EditUserModal = (props) => {
             placeholder={t('输入额度')}
             value={adjustQuotaLocal}
             min={adjustMode === 'override' ? undefined : 0}
-            onChange={(val) => {
-              const quota = val === '' || val == null ? '' : val;
-              setAdjustQuotaLocal(quota);
-              setAdjustAmountLocal(
-                quota === ''
-                  ? ''
-                  : adjustMode === 'override'
-                    ? Number(quotaToDisplayAmount(quota).toFixed(6))
-                    : Number(quotaToDisplayAmount(Math.abs(quota)).toFixed(6)),
-              );
-            }}
+            onChange={syncAdjustFromQuota}
             style={{ width: '100%' }}
             showClear
             step={500000}

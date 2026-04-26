@@ -23,6 +23,7 @@
 | `common/email_templates.go` | 6类多语言邮件模板（zh/en/ja/fr/es）：注册验证码、密码重置、达人申请验证码、审核通过、审核拒绝、打款通知 |
 | `controller/topup_packages.go` | 公开充值套餐接口 `GetPublicTopupPackages` + 多语言辅助函数 `resolveI18nNames` / `localizedAmountOptions`；从上游 `controller/topup.go` 拆出以最小化上游合并冲突面 |
 | `model/topup_quota_custom.go` | `CalcQuotaByAmount(topUp)` — 基于套餐积分数（`Amount × 5000`）计算 quota，使折扣仅影响价格不影响用户获得的积分数；`CreditDivisor()` — 返回冻结的 quota → 显示积分除数（5000 = QuotaPerUnit/100），确保与前端 `model_price×100` 的模型费用显示一致 |
+| `web/src/helpers/creditQuota.js` | 后台管理端积分↔quota 换算辅助函数：`getCreditDivisor()` / `quotaToCredits()` / `creditsToQuota()` / `formatCredits()`，供管理员调额 UI 默认按积分输入 |
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
 | `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
@@ -264,13 +265,14 @@
 | `web/src/pages/Home/index.jsx` / `web/src/pages/About/index.jsx` / `web/src/components/layout/Footer.jsx` / `web/src/components/settings/OtherSetting.jsx` / `web/src/helpers/utils.jsx` | 首页/关于/页脚/更新弹窗/HTML toast 全部切换到统一安全渲染器，保留富文本能力但移除危险标签、事件属性和不安全链接 |
 | `web/src/components/topup/index.jsx` | 新增 `stripeRebateRate` / `stripeOriginalAmount` state，从 `RequestAmount` 响应中解析并传入 `PaymentConfirmModal` |
 | `web/src/components/topup/modals/PaymentConfirmModal.jsx` | 新增 `stripeRebateRate` / `stripeOriginalAmount` props；当 `payWay === 'stripe'` 且存在推荐折扣时展示原价删除线 + "推荐折扣" Tag |
+| `web/src/components/table/users/modals/EditUserModal.jsx` | 管理员“调整额度”弹窗默认改为按“积分”输入；新增高级折叠项“金额输入”“原生额度输入”，三者双向换算并统一提交 raw quota 给 `/api/user/manage`，以减少将金额误当积分导致的错调 |
 | `web/src/components/table/users/modals/EditAffCodeModal.jsx` | 引入 `useSecureVerification`，修改达人邀请码（`PUT /api/kol/admin/users/:id/aff_code`）前强制触发二次身份校验 |
 | `web/src/components/topup/modals/TopupHistoryModal.jsx` | 引入 `useSecureVerification`，手动补单（`POST /api/user/topup/complete`）前强制触发二次身份校验 |
 | `web/src/helpers/auth.jsx` | 新增 `ReviewerRoute` 路由守卫 |
 | `web/src/helpers/utils.jsx` | 新增 `isReviewer()` 工具函数 |
 | `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}`；`StripeUnitPrice` 输入框 `precision` 从 `2` 改为 `5`，支持填写 0.08167 这类 5 位小数单价（后端 `StripeUnitPrice` 为 `float64`，天然支持；merge 上游时若该行被改动，需保留 `precision={5}`） |
 | `web/src/pages/KolDashboard/index.jsx` | （新增文件）"返佣比例"卡片改为实时显示 `commission_rate * 100 - rebateRate`，随推荐折扣滑块联动更新，反映让利后的净佣金比例 |
-| `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key；补充"推荐折扣"、"推荐折扣已更新"及折扣说明/示例文案 key |
+| `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key；补充"推荐折扣"、"推荐折扣已更新"及折扣说明/示例文案 key；新增后台调额相关文案 key（"积分"、"输入积分"、"使用金额输入"、"收起金额输入"） |
 
 ---
 

@@ -101,7 +101,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		return errors.New("未提供支付单号")
 	}
 
-	var quota float64
+	var quota int
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -144,7 +144,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		return errors.New("充值失败，请稍后重试")
 	}
 
-	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe)
+	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quota), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe)
 
 	return nil
 }
@@ -338,17 +338,16 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 			return errors.New("订单状态不是待支付，无法补单")
 		}
 
-		// 计算应充值额度：
-		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
-		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
-		if topUp.PaymentMethod == PaymentMethodStripe {
-			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())
-		} else {
-			dAmount := decimal.NewFromInt(topUp.Amount)
-			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-			quotaToAdd = int(dAmount.Mul(dQuotaPerUnit).IntPart())
-		}
+			// 计算应充值额度：
+			// - Stripe 订单：按套餐积分数补单，需与正常 webhook 入账路径完全一致
+			// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
+			if topUp.PaymentMethod == PaymentMethodStripe {
+				quotaToAdd = CalcQuotaByAmount(topUp)
+			} else {
+				dAmount := decimal.NewFromInt(topUp.Amount)
+				dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+				quotaToAdd = int(dAmount.Mul(dQuotaPerUnit).IntPart())
+			}
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}

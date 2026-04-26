@@ -5,10 +5,10 @@ package model
 // 与 quota/creditQuotaRatio 的余额显示完全一致。
 const creditQuotaRatio = 5000
 
-func CalcQuotaByAmount(topUp *TopUp) float64 {
-	return float64(topUp.Amount) * creditQuotaRatio
+func CalcQuotaByAmount(topUp *TopUp) int {
+	return int(topUp.Amount) * creditQuotaRatio
 }
 
-func CreditDivisor() float64 {
+func CreditDivisor() int {
 	return creditQuotaRatio
 }
