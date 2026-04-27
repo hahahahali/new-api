@@ -95,15 +95,16 @@ SQLite migrator（`glebarez/sqlite`）在 schema 存在历史差异时（如 uni
 - 上游若修改 `GetPublicTopupPackages` 的守卫条件，需保持改为 `setting.StripeUnitPrice <= 0`（原始条件为 `StripeApiSecret == "" || StripeWebhookSecret == ""`，该条件过严）。
 - `resolveI18nNames` 和 `localizedAmountOptions` 位于 `controller/topup_packages.go`（我们新建的文件，上游不会修改），回退策略：指定语言 → "zh" → 第一个可用语言 → nil。
 
-### 3.3 管理员调额 UI 默认按积分输入
+### 3.3 管理员调额 UI 默认按积分输入；用户列表额度列显示积分
 
-**文件**：`web/src/components/table/users/modals/EditUserModal.jsx`、`web/src/helpers/creditQuota.js`
-**规则**：管理员“调整额度”弹窗默认输入语义已从“金额”改为“积分”，并保留“金额输入”“原生额度输入”两个高级折叠项。最终提交给 `/api/user/manage` 的仍是 raw quota。
+**文件**：`web/src/components/table/users/modals/EditUserModal.jsx`、`web/src/helpers/creditQuota.js`、`web/src/components/table/users/UsersColumnDefs.jsx`
+**规则**：管理员”调整额度”弹窗默认输入语义已从”金额”改为”积分”，并保留”金额输入””原生额度输入”两个高级折叠项。最终提交给 `/api/user/manage` 的仍是 raw quota。用户列表”剩余额度/总额度”列通过 `renderCreditUsage`（`UsersColumnDefs.jsx` 中新增函数，调用 `quotaToCredits + formatCredits`）以积分显示，而非美元；上游同名函数 `renderQuotaUsage` 保留但不再在该列使用，以减少 merge 冲突面。
 
 **同步时检查**：
-- 上游若修改 `EditUserModal` 的调额弹窗，确认默认主输入仍是“积分”，不要回退成“金额”。
+- 上游若修改 `EditUserModal` 的调额弹窗，确认默认主输入仍是”积分”，不要回退成”金额”。
 - 上游若修改 `quota_per_unit` 前端读取逻辑，确认 `creditQuota.js` 中 `getCreditDivisor()` 的 `quotaPerUnit / 100` 推导仍成立。
 - 上游若新增管理员调额 API 字段，保持现有 `/api/user/manage` 的 raw quota 提交路径不变，避免前后端口径再次分叉。
+- 上游若修改 `renderQuotaUsage`（如新增显示类型、改布局），评估是否需要同步改动 `renderCreditUsage`，以保持样式一致。列定义只需保留 `renderCreditUsage` 调用不动。
 
 ---
 

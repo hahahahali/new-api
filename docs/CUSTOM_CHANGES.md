@@ -259,7 +259,7 @@
 | `web/src/components/layout/SiderBar.jsx` | 新增"达人中心"和"审核中心"菜单组（按 group/role 显示） |
 | `web/src/components/settings/PaymentSetting.jsx` | 删除 `StripePriceId` 初始 state；新增 `AmountOptionNames` / `AmountOptionDescs` 初始 state 及对应 switch case（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`） |
 | `web/src/pages/Setting/Payment/SettingsGeneralPayment.jsx` | 新增 `AmountOptionNames` / `AmountOptionDescs` state、验证、提交逻辑（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`）及 TextArea UI 组件 |
-| `web/src/components/table/users/UsersColumnDefs.jsx` | 用户列表新增 KOL 字段列 |
+| `web/src/components/table/users/UsersColumnDefs.jsx` | 用户列表新增 KOL 字段列；新增 `renderCreditUsage` 函数（`quotaToCredits + formatCredits`），列定义由 `renderQuotaUsage` 切换为 `renderCreditUsage` 以积分替代美元显示；原 `renderQuotaUsage` 函数体保留不动（供上游 patch 干净 apply），`renderQuota` 仍用于 `aff_history_quota` 邀请历史收益展示 |
 | `web/src/components/table/users/UsersTable.jsx` | 配合上述列变更 |
 | `web/src/components/common/DocumentRenderer/index.jsx` | HTML 文档页不再直接注入原始 HTML，统一改为白名单清洗后的安全渲染 |
 | `web/src/components/dashboard/AnnouncementsPanel.jsx` / `web/src/components/dashboard/FaqPanel.jsx` / `web/src/components/layout/NoticeModal.jsx` | 公告/FAQ/通知的 `marked + dangerouslySetInnerHTML` 改为安全 HTML 渲染，阻断脚本注入 |

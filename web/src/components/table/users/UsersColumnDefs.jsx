@@ -30,6 +30,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconMore } from '@douyinfe/semi-icons';
 import { renderGroup, renderNumber, renderQuota } from '../../../helpers';
+import { quotaToCredits, formatCredits } from '../../../helpers/creditQuota';
 
 /**
  * Render user role
@@ -158,6 +159,46 @@ const renderQuotaUsage = (text, record, t) => {
       <Tag color='white' shape='circle'>
         <div className='flex flex-col items-end'>
           <span className='text-xs leading-none'>{`${renderQuota(remain)} / ${renderQuota(total)}`}</span>
+          <Progress
+            percent={percent}
+            aria-label='quota usage'
+            format={() => `${percent.toFixed(0)}%`}
+            style={{ width: '100%', marginTop: '1px', marginBottom: 0 }}
+          />
+        </div>
+      </Tag>
+    </Popover>
+  );
+};
+
+// Credits display: shows quota as credits (creditQuotaRatio) instead of USD.
+// renderQuotaUsage above is kept verbatim so upstream patches apply cleanly;
+// only the column definition below is switched to call this function instead.
+const renderCreditUsage = (text, record, t) => {
+  const { Paragraph } = Typography;
+  const used = parseInt(record.used_quota) || 0;
+  const remain = parseInt(record.quota) || 0;
+  const total = used + remain;
+  const percent = total > 0 ? (remain / total) * 100 : 0;
+  const rc = (q) => `${formatCredits(quotaToCredits(q))} ${t('积分')}`;
+  const popoverContent = (
+    <div className='text-xs p-2'>
+      <Paragraph copyable={{ content: rc(used) }}>
+        {t('已用额度')}: {rc(used)}
+      </Paragraph>
+      <Paragraph copyable={{ content: rc(remain) }}>
+        {t('剩余额度')}: {rc(remain)} ({percent.toFixed(0)}%)
+      </Paragraph>
+      <Paragraph copyable={{ content: rc(total) }}>
+        {t('总额度')}: {rc(total)}
+      </Paragraph>
+    </div>
+  );
+  return (
+    <Popover content={popoverContent} position='top'>
+      <Tag color='white' shape='circle'>
+        <div className='flex flex-col items-end'>
+          <span className='text-xs leading-none'>{`${rc(remain)} / ${rc(total)}`}</span>
           <Progress
             percent={percent}
             aria-label='quota usage'
@@ -346,7 +387,7 @@ export const getUsersColumns = ({
     {
       title: t('剩余额度/总额度'),
       key: 'quota_usage',
-      render: (text, record) => renderQuotaUsage(text, record, t),
+      render: (text, record) => renderCreditUsage(text, record, t),
     },
     {
       title: t('分组'),
