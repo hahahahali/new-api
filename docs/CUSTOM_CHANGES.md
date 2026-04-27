@@ -20,7 +20,7 @@
 | `service/withdrawal.go` | CreateWithdrawalTransfer — Stripe Connect 打款封装（已停用，保留注释） |
 | `setting/payment_commission.go` | KolCommissionRate=0.20、StripeConnectEnabled=false、MinWithdrawalAmount=5.0 |
 | `setting/payment_stripe_connect.go` | StripeConnectClientId 配置变量 |
-| `common/email_templates.go` | 6类多语言邮件模板（zh/en/ja/fr/es）：注册验证码、密码重置、达人申请验证码、审核通过、审核拒绝、打款通知 |
+| `common/email_templates.go` | 7类多语言邮件模板（zh/en/ja/fr/es）：注册验证码、密码重置、达人申请验证码、审核通过、审核拒绝、打款通知、**KOL 欢迎邮件**（`BuildKolWelcomeEmail`，含达人中心路径提示、提现条件、返佣规则，注册成功后由 `controller/user.go` 异步触发） |
 | `controller/topup_packages.go` | 公开充值套餐接口 `GetPublicTopupPackages` + 多语言辅助函数 `resolveI18nNames` / `localizedAmountOptions`；从上游 `controller/topup.go` 拆出以最小化上游合并冲突面 |
 | `model/topup_quota_custom.go` | `CalcQuotaByAmount(topUp)` — 基于套餐积分数（`Amount × 5000`）计算 quota，使折扣仅影响价格不影响用户获得的积分数；`CreditDivisor()` — 返回冻结的 quota → 显示积分除数（5000 = QuotaPerUnit/100），确保与前端 `model_price×100` 的模型费用显示一致 |
 | `web/src/helpers/creditQuota.js` | 后台管理端积分↔quota 换算辅助函数：`getCreditDivisor()` / `quotaToCredits()` / `creditsToQuota()` / `formatCredits()`，供管理员调额 UI 默认按积分输入 |
@@ -98,6 +98,7 @@
   - 仅接受 `group == “kol”` 用户的邀请码（非 KOL 邀请人的 inviterId 被置零）
   - 处理 URL 参数 `kol_token`，调用 `applyKolInviteToken()`（非致命失败，仅 SysLog）
 - **改动 2**：新增 `applyKolInviteToken()` 私有函数，委托 `model.ConsumeKolInviteToken()` 以事务方式原子完成”一次性 token 消耗 + 用户升级为 kol”；同时从 AffiliateApplication 复制 `lang` 字段到新注册用户，用于后续多语言邮件通知
+- **改动 2.1**：注册全流程成功（默认令牌写入、`c.JSON success:true` 响应发出）后，在独立 goroutine 中按 token 反查 AffiliateApplication，取 `app.Email`/`app.Name`/`app.Lang`，调用 `common.BuildKolWelcomeEmail` 发送 KOL 欢迎邮件（含登录入口、业绩查看路径、提现流程与条件）；发送失败仅记 SysLog，不影响注册结果。`kolAppliedToken` 变量用于在 `applyKolInviteToken()` 成功时暂存 token，注册流程中途失败则该变量为空，goroutine 不会启动。
 - **规则收口**：文件内 9 处直接调用的 `encoding/json`（`json.NewDecoder().Decode`、`json.Marshal`、`json.Unmarshal`）已全部替换为 `common.DecodeJson` / `common.Marshal` / `common.Unmarshal`；`encoding/json` import 已移除。
 - **风险点**：上游若修改 `Register()` 的注册流程（如 inviter 处理逻辑），需确认 KOL 过滤和 kol_token 处理仍在正确位置，且不要回退为”先查 token，再分步更新 user/group 与 token_used”的非原子写法。
 

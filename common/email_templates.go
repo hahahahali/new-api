@@ -286,6 +286,141 @@ func BuildPasswordResetEmail(lang, systemName, link string, validMinutes int) (s
 	return
 }
 
+// BuildKolWelcomeEmail returns subject and HTML body sent to a new KOL after they register via invite link.
+// dashboardLink is the full URL to /console/kol; minAmount is the minimum withdrawal threshold in USD;
+// commissionRate is the KOL commission rate (e.g. 0.20 for 20%).
+func BuildKolWelcomeEmail(lang, name, systemName, dashboardLink string, minAmount, commissionRate float64) (subject, content string) {
+	lang = normalizeEmailLang(lang)
+	switch lang {
+	case "zh":
+		subject = fmt.Sprintf("【%s】欢迎加入达人计划 🎉", systemName)
+		content = fmt.Sprintf(`<p>您好 %s，</p>
+<p>恭喜您成功加入 <strong>%s</strong> 达人计划！以下是您需要了解的快速指南。</p>
+
+<h3>📊 查看业绩</h3>
+<p><a href="%s">进入达人中心</a><br>
+<small>路径：控制台 → 达人中心</small></p>
+<p>登录后可查看：邀请码、已邀请人数、佣金明细、累计收益。</p>
+
+<h3>💸 申请提现</h3>
+<p><a href="%s">进入提现申请</a><br>
+<small>路径：控制台 → 达人中心 → 提现申请</small></p>
+
+<h3>📋 提现条件</h3>
+<ul>
+<li>最低提现金额：<strong>$%.2f</strong></li>
+<li>佣金冻结期：充值到账后 <strong>10 天</strong>自动解冻</li>
+<li>打款时间：每月 <strong>1 日</strong> 和 <strong>15 日</strong>（通过 PayPal）</li>
+<li>返佣规则：每位被邀请用户的<strong>前 3 次充值</strong>订单参与返佣，佣金比例 %.0f%%</li>
+</ul>
+
+<p>如有疑问，请随时联系我们。</p>
+<p><strong>%s</strong> 团队</p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	case "ja":
+		subject = fmt.Sprintf("【%s】アフィリエイトプログラムへようこそ 🎉", systemName)
+		content = fmt.Sprintf(`<p>%s 様、</p>
+<p><strong>%s</strong> のアフィリエイトプログラムへの参加おめでとうございます！クイックガイドをご覧ください。</p>
+
+<h3>📊 実績の確認</h3>
+<p><a href="%s">アフィリエイトダッシュボードへ</a><br>
+<small>パス：コンソール → アフィリエイトセンター</small></p>
+<p>ログイン後に確認できます：招待コード、招待人数、コミッション明細、累計収益。</p>
+
+<h3>💸 出金申請</h3>
+<p><a href="%s">出金申請へ</a><br>
+<small>パス：コンソール → アフィリエイトセンター → 出金申請</small></p>
+
+<h3>📋 出金条件</h3>
+<ul>
+<li>最低出金額：<strong>$%.2f</strong></li>
+<li>コミッション保留期間：入金後 <strong>10日間</strong> で自動解除</li>
+<li>支払いスケジュール：毎月 <strong>1日</strong> と <strong>15日</strong>（PayPal経由）</li>
+<li>報酬ルール：招待したユーザーの<strong>最初の3回の購入</strong>がコミッション対象、コミッション率%.0f%%</li>
+</ul>
+
+<p>ご不明な点がございましたら、お気軽にお問い合わせください。</p>
+<p><strong>%s</strong> チーム</p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	case "fr":
+		subject = fmt.Sprintf("【%s】Bienvenue dans le programme d'affiliation 🎉", systemName)
+		content = fmt.Sprintf(`<p>Bonjour %s,</p>
+<p>Félicitations pour avoir rejoint le programme d'affiliation <strong>%s</strong> ! Voici votre guide rapide.</p>
+
+<h3>📊 Consulter vos performances</h3>
+<p><a href="%s">Accéder au tableau de bord affilié</a><br>
+<small>Chemin : Console → Centre affilié</small></p>
+<p>Après connexion, vous pouvez consulter : code d'invitation, nombre d'invités, détails des commissions, revenus cumulés.</p>
+
+<h3>💸 Demander un retrait</h3>
+<p><a href="%s">Accéder à la demande de retrait</a><br>
+<small>Chemin : Console → Centre affilié → Demande de retrait</small></p>
+
+<h3>📋 Conditions de retrait</h3>
+<ul>
+<li>Montant minimum de retrait : <strong>$%.2f</strong></li>
+<li>Période de gel des commissions : <strong>10 jours</strong> après le paiement, déblocage automatique</li>
+<li>Calendrier de paiement : le <strong>1er</strong> et le <strong>15</strong> de chaque mois (via PayPal)</li>
+<li>Règle de commission : les <strong>3 premiers achats</strong> de chaque utilisateur invité sont éligibles, taux %.0f%%</li>
+</ul>
+
+<p>N'hésitez pas à nous contacter pour toute question.</p>
+<p>L'équipe <strong>%s</strong></p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	case "es":
+		subject = fmt.Sprintf("【%s】Bienvenido al programa de afiliados 🎉", systemName)
+		content = fmt.Sprintf(`<p>Hola %s,</p>
+<p>¡Felicitaciones por unirse al programa de afiliados de <strong>%s</strong>! Aquí tiene su guía rápida.</p>
+
+<h3>📊 Ver su rendimiento</h3>
+<p><a href="%s">Ir al panel de afiliados</a><br>
+<small>Ruta: Consola → Centro de afiliados</small></p>
+<p>Después de iniciar sesión puede ver: código de invitación, número de invitados, detalles de comisiones, ingresos acumulados.</p>
+
+<h3>💸 Solicitar retiro</h3>
+<p><a href="%s">Ir a solicitud de retiro</a><br>
+<small>Ruta: Consola → Centro de afiliados → Solicitud de retiro</small></p>
+
+<h3>📋 Condiciones de retiro</h3>
+<ul>
+<li>Monto mínimo de retiro: <strong>$%.2f</strong></li>
+<li>Período de congelamiento de comisiones: <strong>10 días</strong> después del pago, desbloqueo automático</li>
+<li>Calendario de pagos: el <strong>1</strong> y el <strong>15</strong> de cada mes (vía PayPal)</li>
+<li>Regla de comisión: las <strong>primeras 3 compras</strong> de cada usuario invitado son elegibles, tasa %.0f%%</li>
+</ul>
+
+<p>Contáctenos si tiene alguna pregunta.</p>
+<p>El equipo de <strong>%s</strong></p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	default: // en
+		subject = fmt.Sprintf("【%s】Welcome to the Affiliate Program 🎉", systemName)
+		content = fmt.Sprintf(`<p>Hello %s,</p>
+<p>Congratulations on joining the <strong>%s</strong> affiliate program! Here is your quick start guide.</p>
+
+<h3>📊 View Your Performance</h3>
+<p><a href="%s">Go to Affiliate Dashboard</a><br>
+<small>Path: Console → Affiliate Center</small></p>
+<p>After logging in you can see: your invite code, number of referrals, commission details, and total earnings.</p>
+
+<h3>💸 Request a Withdrawal</h3>
+<p><a href="%s">Go to Withdrawal Request</a><br>
+<small>Path: Console → Affiliate Center → Withdrawal Request</small></p>
+
+<h3>📋 Withdrawal Conditions</h3>
+<ul>
+<li>Minimum withdrawal amount: <strong>$%.2f</strong></li>
+<li>Commission freeze period: <strong>10 days</strong> after the purchase, auto-released</li>
+<li>Payout schedule: the <strong>1st</strong> and <strong>15th</strong> of each month (via PayPal)</li>
+<li>Commission rule: the <strong>first 3 purchases</strong> of each referred user are eligible, %.0f%% rate</li>
+</ul>
+
+<p>Feel free to contact us if you have any questions.</p>
+<p>The <strong>%s</strong> team</p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	}
+	return
+}
+
 // BuildWithdrawalPaidEmail returns subject and HTML body for the withdrawal payment notification.
 func BuildWithdrawalPaidEmail(lang, username, systemName string, amount float64, txId string) (subject, content string) {
 	lang = normalizeEmailLang(lang)

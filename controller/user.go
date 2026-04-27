@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -202,12 +203,17 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Handle KOL invite token — set group to "kol" if a valid unused token was provided
+	// Handle KOL invite token — set group to "kol" if a valid unused token was provided.
+	// kolAppliedToken is non-empty only when the token was consumed successfully; welcome email
+	// is sent after all registration steps succeed to avoid sending it on a failed registration.
+	var kolAppliedToken string
 	kolToken := strings.TrimSpace(c.Query("kol_token"))
 	if kolToken != "" {
 		if appErr := applyKolInviteToken(kolToken, insertedUser.Id); appErr != nil {
 			common.SysLog(fmt.Sprintf("kol_token apply failed for user %d: %v", insertedUser.Id, appErr))
 			// Non-fatal: continue with normal registration
+		} else {
+			kolAppliedToken = kolToken
 		}
 	}
 	// 生成默认令牌
@@ -243,6 +249,27 @@ func Register(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+	// Send KOL welcome email after full registration success (goroutine, non-blocking)
+	if kolAppliedToken != "" {
+		go func(token string) {
+			app, err := model.GetApplicationByToken(token)
+			if err != nil || app == nil || app.Email == "" {
+				return
+			}
+			dashboardLink := strings.TrimRight(system_setting.ServerAddress, "/") + "/console/kol"
+			subject, content := common.BuildKolWelcomeEmail(
+				app.Lang,
+				app.Name,
+				common.SystemName,
+				dashboardLink,
+				setting.MinWithdrawalAmount,
+				setting.KolCommissionRate,
+			)
+			if sendErr := common.SendEmail(subject, app.Email, content); sendErr != nil {
+				common.SysLog(fmt.Sprintf("kol welcome email failed for %s: %v", app.Email, sendErr))
+			}
+		}(kolAppliedToken)
+	}
 	return
 }
 
