@@ -79,11 +79,6 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("充值数量不能小于 %d", getStripeMinTopup()), "data": 10})
 		return
 	}
-	if req.Amount > 10000000 {
-		c.JSON(http.StatusOK, gin.H{"message": "充值数量不能大于 10000000", "data": 10})
-		return
-	}
-
 	if req.SuccessURL != "" && common.ValidateRedirectURL(req.SuccessURL) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "支付成功重定向URL不在可信任域名列表中", "data": ""})
 		return

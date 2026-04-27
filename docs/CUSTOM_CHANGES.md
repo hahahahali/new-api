@@ -144,6 +144,7 @@
 ### `controller/topup.go` / `controller/topup_creem.go` / `controller/topup_stripe.go` / `controller/topup_waffo.go`
 
 - **改动 1**：每个支付回调成功后调用 `service.ProcessCommission(userId, tradeNo, paidUSD)` 3 参数版本（幂等，失败仅记日志）。折扣前原价由 `ProcessCommission` 内部按 `tradeNo` 反查 `TopUp.OriginalMoney` 获得，**调用方无需传 OriginalMoney**，最小化与上游 topup*.go 的 merge 冲突面。
+- **改动 1.5**（仅 `topup_stripe.go` + 新增 `controller/topup_stripe_guard.go`）：上游 `RequestPay` 硬编码 `Amount > 10000` 上限被放宽为 `Amount > 10000000`（安全兜底），真正的入参校验改由新建文件 `topup_stripe_guard.go` 中的 `GuardedRequestStripePay` 白名单逻辑承担——只允许 `AmountOptions` 配置的金额通过，防止用户提交任意金额。上游若修改原始 10000 上限，需保留 10000000 阈值并确认 guard 白名单仍生效。
 - **改动 2**（仅 `topup_stripe.go`）：
   - **保留上游 `genStripeLink(amount int64, ...)` 函数体不动**（含其使用的 `setting.StripePriceId`），仅作为上游兼容存根存在。
   - **新增并列函数 `genStripeLinkPriceData(payMoney float64, ...)`**：基于 Stripe `price_data` 的动态定价实现（`UnitAmount = payMoney × 100` 分），用于 KOL 推荐折扣 + 阶梯定价场景下每笔订单金额都不同的需求。
@@ -270,7 +271,7 @@
 | `web/src/components/topup/modals/TopupHistoryModal.jsx` | 引入 `useSecureVerification`，手动补单（`POST /api/user/topup/complete`）前强制触发二次身份校验 |
 | `web/src/helpers/auth.jsx` | 新增 `ReviewerRoute` 路由守卫 |
 | `web/src/helpers/utils.jsx` | 新增 `isReviewer()` 工具函数 |
-| `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}`；`StripeUnitPrice` 输入框 `precision` 从 `2` 改为 `5`，支持填写 0.08167 这类 5 位小数单价（后端 `StripeUnitPrice` 为 `float64`，天然支持；merge 上游时若该行被改动，需保留 `precision={5}`） |
+| `web/src/pages/Setting/Payment/SettingsPaymentGatewayStripe.jsx` | 删除 `StripePriceId` 输入字段及提交逻辑；第一行 Col 宽度从 `md={8}` 调整为 `md={12}`；`StripeUnitPrice` 输入框 `precision` 从 `2` 改为 `7`，支持填写 0.0008167 这类 7 位小数单价（后端 `StripeUnitPrice` 为 `float64`，天然支持；merge 上游时若该行被改动，需保留 `precision={7}`） |
 | `web/src/pages/KolDashboard/index.jsx` | （新增文件）"返佣比例"卡片改为实时显示 `commission_rate * 100 - rebateRate`，随推荐折扣滑块联动更新，反映让利后的净佣金比例 |
 | `web/src/i18n/locales/*.json` | 所有 7 个语言文件补齐 KOL/达人申请/审核中心相关 key；补充"推荐折扣"、"推荐折扣已更新"及折扣说明/示例文案 key；新增后台调额相关文案 key（"积分"、"输入积分"、"使用金额输入"、"收起金额输入"） |
 
