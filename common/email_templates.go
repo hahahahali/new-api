@@ -1,11 +1,19 @@
 package common
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // normalizeEmailLang returns a supported email language code, falling back to "en".
+// Handles locale variants like zh-CN/zh-TW → zh.
 func normalizeEmailLang(lang string) string {
+	// Normalize zh variants (zh-CN, zh-TW, zh-Hans, zh-Hant, etc.)
+	if strings.HasPrefix(lang, "zh") {
+		return "zh"
+	}
 	switch lang {
-	case "zh", "en", "ja", "fr", "es":
+	case "en", "ja", "fr", "es", "ru", "vi":
 		return lang
 	default:
 		return "en"
@@ -47,6 +55,22 @@ func BuildAffiliateVerificationEmail(lang, systemName, code string) (subject, co
 <p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
 <p>Este código es válido durante <strong>10 minutos</strong>. Por favor, ingréselo a la brevedad.</p>
 <p>Si no realizó esta solicitud, ignore este correo.</p>`,
+			systemName, code)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Код подтверждения", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте,</p>
+<p>Вы подаёте заявку на участие в партнёрской программе <strong>%s</strong>. Ваш код подтверждения:</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Код действителен <strong>10 минут</strong>. Пожалуйста, введите его как можно скорее.</p>
+<p>Если вы не инициировали этот запрос, проигнорируйте письмо.</p>`,
+			systemName, code)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Mã xác minh", systemName)
+		content = fmt.Sprintf(`<p>Xin chào,</p>
+<p>Bạn đang đăng ký tham gia chương trình cộng tác viên của <strong>%s</strong>. Mã xác minh của bạn là:</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Mã có hiệu lực trong <strong>10 phút</strong>. Vui lòng nhập mã ngay.</p>
+<p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>`,
 			systemName, code)
 	default: // en
 		subject = fmt.Sprintf("【%s】Email verification code", systemName)
@@ -108,6 +132,28 @@ func BuildAffiliateApprovalEmail(lang, name, systemName, link string) (subject, 
 <p>📅 <strong>Calendario de pagos:</strong> las <strong>primeras 3 compras</strong> de cada usuario invitado son elegibles para comisión (tasa 20%%), liberada después de un período de retención de 10 días. Los pagos se realizan vía PayPal el <strong>1</strong> y el <strong>15</strong> de cada mes.</p>
 <p>Contáctenos si tiene alguna pregunta.</p>`,
 			name, systemName, link, link, link)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Ваша партнёрская заявка одобрена", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте, %s,</p>
+<p>Поздравляем! Ваша заявка на участие в партнёрской программе <strong>%s</strong> одобрена.</p>
+<p>Перейдите по ссылке ниже для завершения регистрации. После регистрации вы автоматически попадёте в партнёрскую группу с доступом к функциям комиссионного вознаграждения:</p>
+<p><a href="%s">%s</a></p>
+<p>Если ссылка не открывается, скопируйте адрес в браузер:<br>%s</p>
+<p><strong>Внимание: ссылка одноразовая.</strong></p>
+<p>📅 <strong>График выплат:</strong> <strong>первые 3 покупки</strong> каждого приглашённого пользователя участвуют в комиссии (ставка 20%%), которая разблокируется через 10 дней. Выплаты через PayPal производятся <strong>1-го</strong> и <strong>15-го</strong> числа каждого месяца.</p>
+<p>Если у вас есть вопросы, свяжитесь с нами.</p>`,
+			name, systemName, link, link, link)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Đơn đăng ký cộng tác viên của bạn đã được chấp thuận", systemName)
+		content = fmt.Sprintf(`<p>Xin chào %s,</p>
+<p>Chúc mừng! Đơn đăng ký tham gia chương trình cộng tác viên của <strong>%s</strong> đã được chấp thuận.</p>
+<p>Vui lòng nhấp vào liên kết bên dưới để hoàn tất đăng ký. Sau khi đăng ký, bạn sẽ tự động được thêm vào nhóm cộng tác viên với quyền truy cập vào các tính năng hoa hồng:</p>
+<p><a href="%s">%s</a></p>
+<p>Nếu liên kết không mở được, hãy sao chép địa chỉ sau vào trình duyệt:<br>%s</p>
+<p><strong>Lưu ý: liên kết này chỉ sử dụng được một lần.</strong></p>
+<p>📅 <strong>Lịch thanh toán:</strong> <strong>3 lần mua đầu tiên</strong> của mỗi người dùng được mời đủ điều kiện hưởng hoa hồng (tỷ lệ 20%%), được giải phóng sau 10 ngày. Thanh toán qua PayPal vào ngày <strong>1</strong> và <strong>15</strong> hàng tháng.</p>
+<p>Liên hệ với chúng tôi nếu bạn có bất kỳ câu hỏi nào.</p>`,
+			name, systemName, link, link, link)
 	default: // en
 		subject = fmt.Sprintf("【%s】Your affiliate application has been approved", systemName)
 		content = fmt.Sprintf(`<p>Hello %s,</p>
@@ -139,6 +185,10 @@ func BuildAffiliateRejectionEmail(lang, name, systemName, reason string) (subjec
 			label = "Commentaire de l'examinateur"
 		case "es":
 			label = "Comentario del revisor"
+		case "ru":
+			label = "Комментарий рецензента"
+		case "vi":
+			label = "Nhận xét của người xét duyệt"
 		default:
 			label = "Reviewer comment"
 		}
@@ -181,6 +231,24 @@ func BuildAffiliateRejectionEmail(lang, name, systemName, reason string) (subjec
 %s
 <p>Si cree que esto es un error o desea más información, no dude en contactarnos. También puede volver a presentar una solicitud cuando cumpla los requisitos.</p>
 <p>Gracias por su interés en <strong>%s</strong>.</p>`,
+			name, systemName, reasonBlock, systemName)
+	case "ru":
+		subject = fmt.Sprintf("【%s】О вашей партнёрской заявке", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте, %s,</p>
+<p>Благодарим вас за заявку на участие в партнёрской программе <strong>%s</strong>.</p>
+<p>По результатам рассмотрения мы вынуждены сообщить, что ваша заявка не была одобрена на этот раз.</p>
+%s
+<p>Если вы считаете, что произошла ошибка, или хотите получить дополнительную информацию, пожалуйста, свяжитесь с нами. Вы также можете повторно подать заявку, когда будете соответствовать требованиям.</p>
+<p>Благодарим за интерес к <strong>%s</strong>.</p>`,
+			name, systemName, reasonBlock, systemName)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Về đơn đăng ký cộng tác viên của bạn", systemName)
+		content = fmt.Sprintf(`<p>Xin chào %s,</p>
+<p>Cảm ơn bạn đã đăng ký tham gia chương trình cộng tác viên của <strong>%s</strong>.</p>
+<p>Sau khi xem xét, chúng tôi tiếc phải thông báo rằng đơn đăng ký của bạn chưa được chấp thuận lần này.</p>
+%s
+<p>Nếu bạn cho rằng đây là sự nhầm lẫn hoặc muốn biết thêm thông tin, vui lòng liên hệ với chúng tôi. Bạn cũng có thể nộp lại đơn khi đủ điều kiện.</p>
+<p>Cảm ơn bạn đã quan tâm đến <strong>%s</strong>.</p>`,
 			name, systemName, reasonBlock, systemName)
 	default: // en
 		subject = fmt.Sprintf("【%s】Regarding your affiliate application", systemName)
@@ -226,6 +294,20 @@ func BuildRegistrationVerificationEmail(lang, systemName, code string, validMinu
 <p>Está verificando su dirección de correo en <strong>%s</strong>.</p>
 <p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
 <p>Este código es válido durante <strong>%d minutos</strong>. Si no realizó esta acción, ignore este correo.</p>`,
+			systemName, code, validMinutes)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Код подтверждения email", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте,</p>
+<p>Вы подтверждаете адрес электронной почты на <strong>%s</strong>.</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Код действителен <strong>%d минут</strong>. Если вы не запрашивали подтверждение, проигнорируйте это письмо.</p>`,
+			systemName, code, validMinutes)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Mã xác minh email", systemName)
+		content = fmt.Sprintf(`<p>Xin chào,</p>
+<p>Bạn đang xác minh địa chỉ email trên <strong>%s</strong>.</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:10px;color:#d97706;text-align:center;padding:20px 0;">%s</p>
+<p>Mã có hiệu lực trong <strong>%d phút</strong>. Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>`,
 			systemName, code, validMinutes)
 	default: // en
 		subject = fmt.Sprintf("【%s】Email verification code", systemName)
@@ -273,6 +355,22 @@ func BuildPasswordResetEmail(lang, systemName, link string, validMinutes int) (s
 <p><a href="%s">%s</a></p>
 <p>Si el enlace no funciona, cópielo en su navegador:<br>%s</p>
 <p>Este enlace es válido durante <strong>%d minutos</strong>. Si no realizó esta acción, ignore este correo.</p>`,
+			systemName, link, link, link, validMinutes)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Сброс пароля", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте,</p>
+<p>Вы запросили сброс пароля на <strong>%s</strong>. Перейдите по ссылке ниже:</p>
+<p><a href="%s">%s</a></p>
+<p>Если ссылка не открывается, скопируйте адрес в браузер:<br>%s</p>
+<p>Ссылка действительна <strong>%d минут</strong>. Если вы не запрашивали сброс пароля, проигнорируйте это письмо.</p>`,
+			systemName, link, link, link, validMinutes)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Đặt lại mật khẩu", systemName)
+		content = fmt.Sprintf(`<p>Xin chào,</p>
+<p>Bạn đã yêu cầu đặt lại mật khẩu trên <strong>%s</strong>. Nhấp vào liên kết bên dưới để tiếp tục:</p>
+<p><a href="%s">%s</a></p>
+<p>Nếu liên kết không mở được, hãy sao chép địa chỉ sau vào trình duyệt:<br>%s</p>
+<p>Liên kết có hiệu lực trong <strong>%d phút</strong>. Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>`,
 			systemName, link, link, link, validMinutes)
 	default: // en
 		subject = fmt.Sprintf("【%s】Password reset", systemName)
@@ -392,6 +490,56 @@ func BuildKolWelcomeEmail(lang, name, systemName, dashboardLink string, minAmoun
 <p>Contáctenos si tiene alguna pregunta.</p>
 <p>El equipo de <strong>%s</strong></p>`,
 			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Добро пожаловать в партнёрскую программу 🎉", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте, %s,</p>
+<p>Поздравляем с вступлением в партнёрскую программу <strong>%s</strong>! Ознакомьтесь с кратким руководством.</p>
+
+<h3>📊 Просмотр результатов</h3>
+<p><a href="%s">Перейти в партнёрский кабинет</a><br>
+<small>Путь: Консоль → Партнёрский центр</small></p>
+<p>После входа вы можете просматривать: реферальный код, количество приглашённых, детали комиссий, накопленный доход.</p>
+
+<h3>💸 Запрос на вывод средств</h3>
+<p><a href="%s">Перейти к запросу на вывод</a><br>
+<small>Путь: Консоль → Партнёрский центр → Запрос на вывод</small></p>
+
+<h3>📋 Условия вывода</h3>
+<ul>
+<li>Минимальная сумма вывода: <strong>$%.2f</strong></li>
+<li>Период заморозки комиссии: <strong>10 дней</strong> после покупки, разблокировка автоматическая</li>
+<li>График выплат: <strong>1-го</strong> и <strong>15-го</strong> числа каждого месяца (через PayPal)</li>
+<li>Правило комиссии: <strong>первые 3 покупки</strong> каждого приглашённого участвуют, ставка %.0f%%</li>
+</ul>
+
+<p>Если у вас есть вопросы, свяжитесь с нами.</p>
+<p>Команда <strong>%s</strong></p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Chào mừng bạn đến với chương trình cộng tác viên 🎉", systemName)
+		content = fmt.Sprintf(`<p>Xin chào %s,</p>
+<p>Chúc mừng bạn đã tham gia chương trình cộng tác viên của <strong>%s</strong>! Dưới đây là hướng dẫn nhanh dành cho bạn.</p>
+
+<h3>📊 Xem hiệu suất</h3>
+<p><a href="%s">Vào trung tâm cộng tác viên</a><br>
+<small>Đường dẫn: Bảng điều khiển → Trung tâm CTV</small></p>
+<p>Sau khi đăng nhập bạn có thể xem: mã mời, số người được mời, chi tiết hoa hồng, tổng thu nhập.</p>
+
+<h3>💸 Yêu cầu rút tiền</h3>
+<p><a href="%s">Vào yêu cầu rút tiền</a><br>
+<small>Đường dẫn: Bảng điều khiển → Trung tâm CTV → Yêu cầu rút tiền</small></p>
+
+<h3>📋 Điều kiện rút tiền</h3>
+<ul>
+<li>Số tiền rút tối thiểu: <strong>$%.2f</strong></li>
+<li>Thời gian đóng băng hoa hồng: <strong>10 ngày</strong> sau khi mua, tự động mở khóa</li>
+<li>Lịch thanh toán: ngày <strong>1</strong> và <strong>15</strong> hàng tháng (qua PayPal)</li>
+<li>Quy tắc hoa hồng: <strong>3 lần mua đầu tiên</strong> của mỗi người được mời đủ điều kiện, tỷ lệ %.0f%%</li>
+</ul>
+
+<p>Liên hệ với chúng tôi nếu bạn có bất kỳ câu hỏi nào.</p>
+<p>Đội ngũ <strong>%s</strong></p>`,
+			name, systemName, dashboardLink, dashboardLink, minAmount, commissionRate*100, systemName)
 	default: // en
 		subject = fmt.Sprintf("【%s】Welcome to the Affiliate Program 🎉", systemName)
 		content = fmt.Sprintf(`<p>Hello %s,</p>
@@ -456,6 +604,22 @@ func BuildWithdrawalPaidEmail(lang, username, systemName string, amount float64,
 <p><strong>ID de transacción de PayPal: %s</strong></p>
 <p>Inicie sesión en su cuenta de PayPal para confirmar la recepción. Contáctenos si tiene alguna pregunta.</p>
 <p>El equipo de <strong>%s</strong></p>`,
+			username, amount, txId, systemName)
+	case "ru":
+		subject = fmt.Sprintf("【%s】Ваш вывод средств обработан", systemName)
+		content = fmt.Sprintf(`<p>Здравствуйте, %s,</p>
+<p>Ваш вывод на сумму <strong>$%.2f</strong> был отправлен на ваш аккаунт PayPal.</p>
+<p><strong>ID транзакции PayPal: %s</strong></p>
+<p>Войдите в свой аккаунт PayPal для подтверждения получения. Свяжитесь с нами, если у вас есть вопросы.</p>
+<p>Команда <strong>%s</strong></p>`,
+			username, amount, txId, systemName)
+	case "vi":
+		subject = fmt.Sprintf("【%s】Yêu cầu rút tiền của bạn đã được xử lý", systemName)
+		content = fmt.Sprintf(`<p>Xin chào %s,</p>
+<p>Khoản rút tiền <strong>$%.2f</strong> của bạn đã được gửi đến tài khoản PayPal của bạn.</p>
+<p><strong>Mã giao dịch PayPal: %s</strong></p>
+<p>Vui lòng đăng nhập vào tài khoản PayPal để xác nhận. Liên hệ với chúng tôi nếu bạn có câu hỏi.</p>
+<p>Đội ngũ <strong>%s</strong></p>`,
 			username, amount, txId, systemName)
 	default: // en
 		subject = fmt.Sprintf("【%s】Your withdrawal has been processed", systemName)
