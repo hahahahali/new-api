@@ -232,7 +232,7 @@ const KolDashboard = () => {
   };
 
   const inviteeColumns = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: t('ID'), dataIndex: 'id', width: 80 },
     { title: t('用户名'), dataIndex: 'username' },
     { title: t('邮箱'), dataIndex: 'email' },
     { title: t('累计充值'), dataIndex: 'total_recharge', render: (v) => `$${(v || 0).toFixed(2)}` },
@@ -240,7 +240,7 @@ const KolDashboard = () => {
   ];
 
   const commissionColumns = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: t('ID'), dataIndex: 'id', width: 80 },
     { title: t('被邀请人 ID'), dataIndex: 'invitee_id', width: 120 },
     { title: t('订单号'), dataIndex: 'trade_no', width: 200, ellipsis: true },
     { title: t('充值金额'), dataIndex: 'recharge_amount', render: (v) => `$${(v || 0).toFixed(2)}` },
@@ -264,7 +264,7 @@ const KolDashboard = () => {
   };
 
   const withdrawalColumns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
+    { title: t('ID'), dataIndex: 'id', width: 60 },
     { title: t('金额'), dataIndex: 'amount', render: (v) => `$${(v || 0).toFixed(2)}` },
     { title: t('PayPal 邮箱'), dataIndex: 'paypal_email', render: (v) => v || '-' },
     {
@@ -334,7 +334,7 @@ const KolDashboard = () => {
                   <Input
                     value={affCodeInput}
                     onChange={setAffCodeInput}
-                    placeholder='e.g. chainNo1'
+                    placeholder='chainNo1'
                     maxLength={20}
                     style={{ width: 160 }}
                     onEnterPress={handleSaveAffCode}

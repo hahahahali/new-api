@@ -118,7 +118,7 @@ const WithdrawalAdmin = () => {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
+    { title: t('ID'), dataIndex: 'id', width: 60 },
     { title: t('达人'), width: 150, render: (_, r) => (
       <div>
         <Text strong>{r.username || '-'}</Text>

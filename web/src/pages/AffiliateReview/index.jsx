@@ -29,7 +29,7 @@ const STATUS_LABELS = {
   rejected: '已拒绝',
 };
 
-const SocialPopover = ({ record }) => {
+const SocialPopover = ({ record, t }) => {
   const socials = [
     record.instagram && { label: 'Instagram', value: `@${record.instagram}` },
     record.tiktok    && { label: 'TikTok',    value: `@${record.tiktok}` },
@@ -68,7 +68,7 @@ const SocialPopover = ({ record }) => {
             icon={<IconCopy />}
             onClick={() => {
               copy(value);
-              showSuccess('已复制');
+              showSuccess(t('已复制'));
             }}
           />
         </div>
@@ -79,7 +79,7 @@ const SocialPopover = ({ record }) => {
   return (
     <Popover content={content} trigger='click' position='bottomLeft' showArrow>
       <Text link style={{ cursor: 'pointer' }}>
-        查看 ({socials.length})
+        {t('查看')} ({socials.length})
       </Text>
     </Popover>
   );
@@ -168,14 +168,14 @@ const AffiliateReview = () => {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
+    { title: t('ID'), dataIndex: 'id', width: 60 },
     { title: t('姓名'), dataIndex: 'name', width: 120 },
     { title: t('邮箱'), dataIndex: 'email', width: 220 },
     { title: t('国家'), dataIndex: 'country', width: 130, render: (v) => v || '-' },
     {
       title: t('社交账号'),
       width: 120,
-      render: (_, record) => <SocialPopover record={record} />,
+      render: (_, record) => <SocialPopover record={record} t={t} />,
     },
     {
       title: t('状态'),
