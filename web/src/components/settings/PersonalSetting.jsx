@@ -51,7 +51,7 @@ import { useSecureVerification } from '../../hooks/common/useSecureVerification'
 const PersonalSetting = () => {
   const [userState, userDispatch] = useContext(UserContext);
   let navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const [inputs, setInputs] = useState({
     wechat_verification_code: '',
@@ -454,7 +454,7 @@ const PersonalSetting = () => {
     }
     setLoading(true);
     const res = await API.get(
-      `/api/verification?email=${inputs.email}&turnstile=${turnstileToken}`,
+      `/api/verification?email=${inputs.email}&turnstile=${turnstileToken}&lang=${i18n.language}`,
     );
     const { success, message } = res.data;
     if (success) {

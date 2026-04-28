@@ -230,7 +230,7 @@
 - **位置**：`SendEmailVerification()` 和 `SendPasswordResetEmail()` 两个函数内
 - **改动 1**（`SendEmailVerification`）：删除原本硬编码的中文邮件主题/正文赋值，改为读取 `lang` 查询参数（`c.DefaultQuery("lang", "zh")`）并调用 `common.BuildRegistrationVerificationEmail(lang, ...)` 多语言模板。
 - **改动 2**（`SendPasswordResetEmail`）：同上，改为调用 `common.BuildPasswordResetEmail(lang, ...)`。
-- **背景**：前端 `api.js` 已在发送验证码/重置密码请求时附带 `&lang=<locale>` 参数，但后端两个函数之前硬编码中文，导致切换语言后收到的邮件仍为中文。两个多语言模板函数（zh/en/ja/fr/es）已实现在 `common/email_templates.go`（我方新增文件）中，`misc.go` 仅增加 2 行 lang 读取 + 1 行模板调用，改动范围最小化。
+- **背景**：前端 `RegisterForm.jsx`、`PersonalSetting.jsx`、`PasswordResetForm.jsx` 已在发送验证码/重置密码请求时附带 `&lang=${i18n.language}` 参数（nanobanana 的 `api.js` 同样如此），但后端两个函数之前硬编码中文，导致切换语言后收到的邮件仍为中文。两个多语言模板函数（zh/en/ja/fr/es/ru/vi）已实现在 `common/email_templates.go`（我方新增文件）中，`misc.go` 仅增加 2 行 lang 读取 + 1 行模板调用，改动范围最小化。
 - **⚠️ 风险点（同步必查）**：上游若修改 `SendEmailVerification` 或 `SendPasswordResetEmail` 的邮件发送逻辑，merge 时需保留"读取 `lang` 参数 + 调用 `common.Build*Email`"的两行，不能回退为硬编码中文内容。
 
 ---
@@ -256,7 +256,9 @@
 |---|---|
 | `web/src/App.jsx` | 新增 KolDashboard 路由、AffiliateApply 路由、AffiliateReview 路由 |
 | `web/src/helpers/safeHtml.jsx` | 新增 `sanitizeRichTextHtml` / `renderMarkdownToSafeHtml` / `SafeHtml`，统一收口富文本渲染的 XSS 面 |
-| `web/src/components/auth/RegisterForm.jsx` | 支持 `kol_token` URL 参数，注册时传递给后端 |
+| `web/src/components/auth/RegisterForm.jsx` | 支持 `kol_token` URL 参数，注册时传递给后端；发送邮箱验证码请求（`GET /api/verification`）新增 `&lang=${i18n.language}`，使验证码邮件语言跟随用户当前界面语言 |
+| `web/src/components/settings/PersonalSetting.jsx` | 绑定邮箱发送验证码请求（`GET /api/verification`）新增 `&lang=${i18n.language}`，同上 |
+| `web/src/components/auth/PasswordResetForm.jsx` | 密码重置邮件请求（`GET /api/reset_password`）新增 `&lang=${i18n.language}`，使重置邮件语言跟随用户当前界面语言 |
 | `web/src/components/layout/SiderBar.jsx` | 新增"达人中心"和"审核中心"菜单组（按 group/role 显示） |
 | `web/src/components/settings/PaymentSetting.jsx` | 删除 `StripePriceId` 初始 state；新增 `AmountOptionNames` / `AmountOptionDescs` 初始 state 及对应 switch case（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`） |
 | `web/src/pages/Setting/Payment/SettingsGeneralPayment.jsx` | 新增 `AmountOptionNames` / `AmountOptionDescs` state、验证、提交逻辑（key `payment_setting.amount_option_names` / `payment_setting.amount_option_descs`）及 TextArea UI 组件 |
