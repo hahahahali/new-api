@@ -326,6 +326,7 @@ func migrateDB() error {
 			return err
 		}
 	}
+	ensurePerformanceIndexes()
 	return nil
 }
 
@@ -429,6 +430,7 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	ensurePerformanceIndexes()
 	return nil
 }
 
@@ -574,6 +576,7 @@ func ensureCommissionRecordTableSQLite() error {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS `idx_commission_records_status` ON `commission_records`(`status`)",
 		"CREATE INDEX IF NOT EXISTS `idx_commission_records_available_at` ON `commission_records`(`available_at`)",
+		"CREATE INDEX IF NOT EXISTS `idx_commission_status_available` ON `commission_records`(`status`, `available_at`)",
 	}
 	for _, sql := range indexes {
 		if err := DB.Exec(sql).Error; err != nil {
@@ -875,6 +878,34 @@ func migrateSubscriptionPlanPriceAmount() {
 			common.SysLog(fmt.Sprintf("Warning: failed to migrate %s.%s to decimal: %v", tableName, columnName, err))
 		} else {
 			common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to decimal(10,6)", tableName, columnName))
+		}
+	}
+}
+
+// ensurePerformanceIndexes 为 midjourneys 和 tasks 表创建性能索引。
+// 对所有数据库类型生效；索引已存在时 MySQL 会报警告（忽略），SQLite/PG 使用 IF NOT EXISTS。
+func ensurePerformanceIndexes() {
+	type idxDef struct {
+		name  string
+		table string
+		cols  string
+	}
+	indexes := []idxDef{
+		{"idx_midjourney_progress", "midjourneys", "progress"},
+		{"idx_task_status_progress", "tasks", "status, progress"},
+		{"idx_task_submit_time", "tasks", "submit_time"},
+	}
+	for _, idx := range indexes {
+		var sql string
+		if common.UsingMySQL {
+			sql = fmt.Sprintf("CREATE INDEX `%s` ON `%s` (%s)", idx.name, idx.table, idx.cols)
+		} else if common.UsingPostgreSQL {
+			sql = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "%s" ON "%s" (%s)`, idx.name, idx.table, idx.cols)
+		} else {
+			sql = fmt.Sprintf("CREATE INDEX IF NOT EXISTS `%s` ON `%s` (%s)", idx.name, idx.table, idx.cols)
+		}
+		if err := DB.Exec(sql).Error; err != nil {
+			common.SysLog(fmt.Sprintf("Warning: index %s already exists or could not be created: %v", idx.name, err))
 		}
 	}
 }

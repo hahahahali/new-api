@@ -19,8 +19,8 @@ type CommissionRecord struct {
 	RechargeAmount   float64 `json:"recharge_amount" gorm:"type:decimal(10,6);not null;default:0"`
 	CommissionRate   float64 `json:"commission_rate" gorm:"type:decimal(5,4);not null;default:0"`
 	CommissionAmount float64 `json:"commission_amount" gorm:"type:decimal(10,6);not null;default:0"`
-	Status           string  `json:"status" gorm:"type:varchar(16);default:'pending';index"`
-	AvailableAt      int64   `json:"available_at" gorm:"bigint;default:0"`
+	Status           string  `json:"status" gorm:"type:varchar(16);default:'pending';index:idx_commission_status_available,priority:1"`
+	AvailableAt      int64   `json:"available_at" gorm:"bigint;default:0;index:idx_commission_status_available,priority:2"`
 	CreatedAt        int64   `json:"created_at" gorm:"bigint"`
 	UpdatedAt        int64   `json:"updated_at" gorm:"bigint"`
 }

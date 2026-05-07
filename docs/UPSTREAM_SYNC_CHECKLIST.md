@@ -108,6 +108,18 @@ SQLite migrator（`glebarez/sqlite`）在 schema 存在历史差异时（如 uni
 
 ---
 
+### 3.4 图片生成响应必须经过 `DoImageResponseWithEarlyFlush`
+
+**文件**：`relay/image_handler.go`（第 109 行）、`relay/image_response_helper.go`（我方新增）
+**规则**：`ImageHelper` 中调用 `adaptor.DoResponse` 的那一行，必须通过我们的 wrapper `DoImageResponseWithEarlyFlush` 调用，而不是直接调用 `adaptor.DoResponse`。这个 wrapper 在等待上游响应体之前提前写出 HTTP 200 + Flush，防止长耗时请求（如 gpt-image-2，3~7 分钟）触发 NAT/防火墙的空闲超时而切断 TCP 连接（broken pipe）。
+
+**同步时检查**：
+- 上游若修改 `ImageHelper` 中 `adaptor.DoResponse` 的调用参数（如新增参数），需同步更新 `relay/image_response_helper.go` 中 `DoImageResponseWithEarlyFlush` 的签名与透传，确保参数保持一致。
+- 确认 `image_handler.go` 第 109 行（或上游合并后的对应行）仍然调用 `DoImageResponseWithEarlyFlush`，而不是直接调用 `adaptor.DoResponse`。
+- 若上游重构了整个 `ImageHelper` 函数（如拆成多个子函数），需重新确认 early flush wrapper 插入在"已确认上游返回 200 之后、读取响应体之前"的正确位置。
+
+---
+
 ### 4. ProcessCommission 钩子 — 支付回调中的佣金触发
 
 **文件**：`controller/topup.go`、`controller/topup_creem.go`、`controller/topup_stripe.go`、`controller/topup_waffo.go`

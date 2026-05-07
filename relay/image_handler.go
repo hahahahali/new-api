@@ -106,7 +106,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 	}
 
-	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	usage, newAPIError := DoImageResponseWithEarlyFlush(c, adaptor, httpResp, info)
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)

@@ -14,7 +14,7 @@
 | `controller/kol.go` | KOL 达人仪表盘、提现申请、Stripe Connect 入驻 |
 | `controller/kol_admin.go` | 管理员：修改 aff_code、查看提现列表、确认 PayPal 打款 |
 | `model/affiliate_application.go` | AffiliateApplication 数据模型（申请状态机、token 一次性使用） |
-| `model/commission.go` | CommissionRecord 数据模型（佣金记录、汇总查询） |
+| `model/commission.go` | CommissionRecord 数据模型（佣金记录、汇总查询）；`Status` 和 `AvailableAt` 字段已加复合索引 `idx_commission_status_available(status, available_at)`，对应慢查询 `WHERE status='pending' AND available_at<=?` |
 | `model/withdrawal.go` | WithdrawalRequest 数据模型（提现申请、余额原子扣减） |
 | `service/commission.go` | ProcessCommission（幂等）、StartCommissionSettleTask（定时冻结 → 可提现） |
 | `service/withdrawal.go` | CreateWithdrawalTransfer — Stripe Connect 打款封装（已停用，保留注释） |
@@ -27,6 +27,7 @@
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
 | `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
+| `relay/image_response_helper.go` | `DoImageResponseWithEarlyFlush` — 图片生成专用 DoResponse wrapper；在调用 `adaptor.DoResponse` 前提前写出 HTTP 200 + Flush，重置中间层（NAT/防火墙）的空闲计时器，防止长时间等待上游期间连接被切断（broken pipe）。仅在上游已确认返回 200 后调用，语义安全。 |
 
 ---
 
@@ -76,9 +77,10 @@
   - `CommissionRecord`、`WithdrawalRequest`、`AffiliateApplication` 的 AutoMigrate
 - **改动 3**：新增 4 个 SQLite 安全迁移函数：
   - `ensureUserTableSQLite()` — users 表新增列（含 `lang`）
-  - `ensureCommissionRecordTableSQLite()`
+  - `ensureCommissionRecordTableSQLite()` — 含复合索引 `(status, available_at)`
   - `ensureWithdrawalRequestTableSQLite()`
   - `ensureAffiliateApplicationTableSQLite()` — affiliate_applications 表新增列（含 `lang`）
+- **改动 4**：新增 `ensurePerformanceIndexes()`，在 `migrateDB()` 和 `migrateDBFast()` 末尾调用，为 `midjourneys(progress)`、`tasks(status, progress)`、`tasks(submit_time)` 补建性能索引（全表扫描导致的慢查询修复）。对所有数据库生效；MySQL 路径索引已存在时会记 Warning 日志并继续，SQLite/PostgreSQL 使用 `IF NOT EXISTS`。
 - **⚠️ 风险点（同步必查）**：SQLite User 迁移是本项目最危险的改动，**绝对不能将 `&User{}` 重新加入 SQLite 的 AutoMigrate 列表**。
 
 ---
@@ -243,8 +245,16 @@
 
 ---
 
-### `.gitignore`
+### `relay/image_handler.go`
 
+- **位置**：`ImageHelper` 函数内，第 109 行（DoResponse 调用）
+- **改动**：将 `adaptor.DoResponse(c, httpResp, info)` 替换为 `DoImageResponseWithEarlyFlush(c, adaptor, httpResp, info)`（我方新增文件中的 wrapper）。仅改调用行，函数体不动。
+- **原因**：图片生成（gpt-image-2）耗时 3~7 分钟，原代码在此期间不向客户端发送任何字节，导致 NAT/防火墙因空闲超时切断 TCP 连接，服务端最终写回时报 broken pipe。
+- **⚠️ 风险点（同步必查）**：上游若修改 `ImageHelper` 中 `adaptor.DoResponse` 的调用参数（如新增参数），需同步更新 `DoImageResponseWithEarlyFlush` 的签名与透传，并确认该行仍调用我们的 wrapper 而非直接调用 `adaptor.DoResponse`。
+
+---
+
+### `.gitignore`
 - **改动**：新增 `PROJECT_MASTER.md` 忽略规则，将本地联合开发统领文件排除在 git 之外，避免误提交本地开发/部署信息。
 - **风险点**：若上游后续修改根目录 `.gitignore`，同步时需保留 `PROJECT_MASTER.md` 的本地忽略规则。
 
