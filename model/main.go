@@ -288,6 +288,7 @@ func migrateDB() error {
 		&SubscriptionPreConsumeRecord{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
+		&PerfMetric{},
 	}
 	if !common.UsingSQLite {
 		models = append([]interface{}{&User{}}, models...)
@@ -361,6 +362,7 @@ func migrateDBFast() error {
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
+		{&PerfMetric{}, "PerfMetric"},
 	}
 	if !common.UsingSQLite {
 		migrations = append(migrations,

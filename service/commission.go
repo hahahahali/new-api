@@ -304,7 +304,7 @@ func GetKolRebateForUser(userId int) float64 {
 
 // CreatePendingTopUpWithKolRebate atomically reserves one commissionable order slot
 // (via a pending top-up row) and returns the discounted payment amount.
-func CreatePendingTopUpWithKolRebate(userId int, amount int64, originalMoney float64, tradeNo, paymentMethod string) (*model.TopUp, float64, error) {
+func CreatePendingTopUpWithKolRebate(userId int, amount int64, originalMoney float64, tradeNo, paymentMethod, paymentProvider string) (*model.TopUp, float64, error) {
 	if originalMoney <= 0 {
 		return nil, 0, fmt.Errorf("invalid original money %.4f", originalMoney)
 	}
@@ -326,14 +326,15 @@ func CreatePendingTopUpWithKolRebate(userId int, amount int64, originalMoney flo
 		}
 
 		topUp = &model.TopUp{
-			UserId:        userId,
-			Amount:        amount,
-			Money:         payMoney,
-			OriginalMoney: originalMoney,
-			TradeNo:       tradeNo,
-			PaymentMethod: paymentMethod,
-			CreateTime:    time.Now().Unix(),
-			Status:        common.TopUpStatusPending,
+			UserId:          userId,
+			Amount:          amount,
+			Money:           payMoney,
+			OriginalMoney:   originalMoney,
+			TradeNo:         tradeNo,
+			PaymentMethod:   paymentMethod,
+			PaymentProvider: paymentProvider,
+			CreateTime:      time.Now().Unix(),
+			Status:          common.TopUpStatusPending,
 		}
 		if err := tx.Create(topUp).Error; err != nil {
 			return err

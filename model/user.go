@@ -49,12 +49,14 @@ type User struct {
 	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	KolBalance              float64 `json:"kol_balance" gorm:"type:decimal(10,6);default:0;column:kol_balance"`
-	KolHistoryBalance       float64 `json:"kol_history_balance" gorm:"type:decimal(10,6);default:0;column:kol_history_balance"`
-	KolRebateRate           float64 `json:"kol_rebate_rate" gorm:"type:decimal(5,4);default:0;column:kol_rebate_rate"`
-	StripeConnectAccountId  string  `json:"stripe_connect_account_id" gorm:"type:varchar(128);default:'';column:stripe_connect_account_id"`
-	StripeConnectOnboarded  bool    `json:"stripe_connect_onboarded" gorm:"default:false;column:stripe_connect_onboarded"`
+	StripeCustomer          string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	KolBalance              float64        `json:"kol_balance" gorm:"type:decimal(10,6);default:0;column:kol_balance"`
+	KolHistoryBalance       float64        `json:"kol_history_balance" gorm:"type:decimal(10,6);default:0;column:kol_history_balance"`
+	KolRebateRate           float64        `json:"kol_rebate_rate" gorm:"type:decimal(5,4);default:0;column:kol_rebate_rate"`
+	StripeConnectAccountId  string         `json:"stripe_connect_account_id" gorm:"type:varchar(128);default:'';column:stripe_connect_account_id"`
+	StripeConnectOnboarded  bool           `json:"stripe_connect_onboarded" gorm:"default:false;column:stripe_connect_onboarded"`
+	CreatedAt               int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt             int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -938,6 +940,12 @@ func DeltaUpdateUserQuota(id int, delta int) (err error) {
 func GetRootUser() (user *User) {
 	DB.Where("role = ?", common.RoleRootUser).First(&user)
 	return user
+}
+
+func UpdateUserLastLoginAt(id int) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_at", common.GetTimestamp()).Error; err != nil {
+		common.SysLog("failed to update user last_login_at: " + err.Error())
+	}
 }
 
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
