@@ -27,7 +27,6 @@
 | `docs/rules/deconflict.md` | 解耦与上游同步规则（本文件的使用规范） |
 | `docs/rules/review.md` | Code Review 规则与审阅清单 |
 | `web/src/helpers/safeHtml.jsx` | 前端富文本安全渲染与 HTML 白名单清洗工具 |
-| `relay/image_response_helper.go` | `DoImageResponseWithEarlyFlush` — 图片生成专用 DoResponse wrapper，保持函数名以兼容调用方，实际 flush 逻辑已移至 `service/http.go` 的 `IOCopyBytesGracefully` 中。 |
 
 ---
 
@@ -216,14 +215,6 @@
 - **改动**：`TestMain` 的 `db.AutoMigrate(...)` 列表尾部追加 `&AffiliateApplication{}`；`truncateTables` 的 `DB.Exec` 序列追加 `DELETE FROM affiliate_applications`。
 - **原因**：引入 `AffiliateApplication` 模型后，任务级 CAS 测试若不在测试库中注册该表，相关集成测试会因表缺失报错。
 - **风险点**：上游若修改该测试文件（例如新增/移除 AutoMigrate 的模型、重构 truncate 流程），merge 时需保留我们追加的 `&AffiliateApplication{}` 注册和对应 DELETE 语句；同步新模型时也要在这里同步追加。
-
----
-
-### `service/http.go`
-
-- **改动**：`IOCopyBytesGracefully()` 在 `WriteHeader` 后立即调用 `Flush()`，将响应头提前发送给客户端，重置中间层（NAT/防火墙/负载均衡器）的空闲计时器，防止后续 `io.Copy` 长时间等待（如图片生成 3-7 分钟）时连接被中间设备判定为空闲而关闭（broken pipe）。
-- **原理**：HTTP 响应头一旦发出，TCP 连接即被视为活跃；后续 `io.Copy` 即使暂时无数据传输，连接也不会因空闲超时被切断。
-- **风险点**：上游若修改 `IOCopyBytesGracefully` 的 `WriteHeader` 调用位置或逻辑，需保留"WriteHeader 后立即 Flush"的顺序，不能将 Flush 移到 `io.Copy` 之后。
 
 ---
 
