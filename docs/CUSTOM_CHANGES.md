@@ -39,6 +39,14 @@
 
 ---
 
+### `model/main.go`
+
+- **改动**：`ensureUserTableSQLite()` 的 `required` 列表新增 `created_at bigint DEFAULT 0` 和 `last_login_at bigint DEFAULT 0`。
+- **原因**：上游合并（commit 28347402 之后）在 `User` 结构体中新增了这两个字段，但未在 SQLite 增量迁移列表中补充，导致旧数据库启动后 `loadCurrentSessionUser` 报 `no such column` 并返回 401。
+- **风险点**：上游若再次向 `User` 新增字段，同步时需检查 `ensureUserTableSQLite()` 的 `required` 列表是否同步补充。
+
+---
+
 ### `middleware/auth.go`
 
 - **改动**：`authHelper()` 对 session 登录态新增当前用户回源校验，不再仅信任 cookie 中缓存的 `role/status/group/username`；被降权、换组或禁用后的旧 session 将在服务端立即失效。

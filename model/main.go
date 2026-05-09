@@ -476,6 +476,8 @@ func ensureUserTableSQLite() error {
 		{Name: "stripe_connect_account_id", DDL: "`stripe_connect_account_id` varchar(128) DEFAULT ''"},
 		{Name: "stripe_connect_onboarded", DDL: "`stripe_connect_onboarded` numeric DEFAULT false"},
 		{Name: "lang", DDL: "`lang` varchar(8) DEFAULT 'en'"},
+		{Name: "created_at", DDL: "`created_at` bigint DEFAULT 0"},
+		{Name: "last_login_at", DDL: "`last_login_at` bigint DEFAULT 0"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {
