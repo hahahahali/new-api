@@ -15,10 +15,14 @@
       if (pcl.contains('dark')) return 'dark';
       if (pcl.contains('light')) return 'light';
       if (parentDoc.body && parentDoc.body.getAttribute('theme-mode') === 'dark') return 'dark';
+      // Classic theme uses "no dark class" to represent light mode.
       return 'light';
     } catch (e) { return null; }
   }
+
+  // 优先读取父级（同源 iframe）的实际主题
   var t = readParentTheme();
+  // fallback：URL 参数 → 系统偏好
   if (!t) {
     var p = new URLSearchParams(location.search).get('theme');
     t = p === 'light' ? 'light'
@@ -257,8 +261,14 @@ h1 em { font-style: normal; color: var(--ind2); }
   max-width: 440px; margin-bottom: 36px; font-weight: 300;
 }
 .hero-desc strong { color: var(--ind2); font-weight: 500; }
-html[data-theme="light"] .hero-desc { color: #13233A; font-weight: 400; }
-html[data-theme="light"] .hero-desc strong { color: var(--ind2); font-weight: 600; }
+html[data-theme="light"] .hero-desc {
+  color: #13233A;
+  font-weight: 400;
+}
+html[data-theme="light"] .hero-desc strong {
+  color: var(--ind2);
+  font-weight: 600;
+}
 
 /* URL Row */
 .url-row {
@@ -738,14 +748,14 @@ footer {
 .f-links a { font-size: 13px; color: var(--t2); text-decoration: none; transition: color .2s; cursor: none; }
 .f-links a:hover { color: var(--t1); }
 .f-copy { font-size: 12px; color: var(--t2); margin-left: auto; }
+footer[hidden] { display: none; }
+footer .f-copy a { color: inherit; text-decoration: none; transition: color .2s; }
+footer .f-copy a:hover { color: var(--t1); }
 html[data-theme="light"] footer  { border-color: rgba(0,0,0,.07); }
 html[data-theme="light"] .logo   { color: #091629; }
 html[data-theme="light"] .f-links a { color: #3A5980; }
 html[data-theme="light"] .f-links a:hover { color: #091629; }
 html[data-theme="light"] .f-copy { color: #86A4C4; }
-footer[hidden] { display: none; }
-footer .f-copy a { color: inherit; text-decoration: none; transition: color .2s; }
-footer .f-copy a:hover { color: var(--t1); }
 
 /* ─── Sphere ─── */
 .sphere-hero { display:flex; flex-direction:column; align-items:center; gap:1.5rem; }
@@ -768,7 +778,8 @@ html[data-theme="light"] #sphere-canvas { cursor: grab; }
 #qr-float {
   position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 9999;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  cursor: pointer; text-decoration: none;
+  cursor: pointer;
+  text-decoration: none;
 }
 #qr-float[hidden] { display: none; }
 #qr-img {
@@ -988,13 +999,13 @@ html[data-theme="dark"] #qr-label { background: rgba(107,92,231,0.85); }
   <div class="rv">
     <p class="section-eye">核心优势</p>
     <h2 class="section-title">为什么选择<em> 147 AI</em></h2>
-    <p class="section-desc">工业级基础设施，把 AI 供应商管理的所有复杂度留给我们，你只需要专注产品。</p>
+    <p class="section-desc">工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。</p>
   </div>
   <div class="feat-grid rv" style="transition-delay:.1s">
     <div class="feat-card">
       <div class="feat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ind2)" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>
       <div class="feat-name">主流模型覆盖</div>
-      <div class="feat-desc">一站式调用 GPT-4o、Claude Sonnet、Gemini 2.5 Pro、DeepSeek V3 等顶级模型，持续扩充，无需多账号管理。</div>
+      <div class="feat-desc">一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。</div>
       <div class="feat-metric">100+<em>个模型</em></div>
     </div>
     <div class="feat-card">
@@ -1032,6 +1043,11 @@ html[data-theme="dark"] #qr-label { background: rgba(107,92,231,0.85); }
 
 </main>
 
+<footer id="siteFooter" hidden>
+  <a href="#" class="logo"><div class="logo-mark">147</div>147 AI</a>
+  <div class="f-copy" id="siteFooterContent"></div>
+</footer>
+
 
 <!-- 主题由父级 iframe 控制，无需独立切换按钮 -->
 
@@ -1040,49 +1056,961 @@ html[data-theme="dark"] #qr-label { background: rgba(107,92,231,0.85); }
 /* ─── iframe 检测 ─── */
 if (window.self !== window.top) { document.body.classList.add('in-iframe'); }
 
+/* ─── Runtime i18n：静态首页轻量多语言 ─── */
+const HOME_I18N = {
+  zh: {
+    title: '147 AI — 企业级大模型 API 中转网关',
+    qrAlt: '扫码添加微信',
+  },
+  en: {
+    title: '147 AI — Enterprise LLM API Gateway',
+    qrAlt: 'Scan to add us on WeChat',
+    text: {
+      '扫码添加微信': 'Scan to add us on WeChat',
+      '已复制 ✓': 'Copied ✓',
+      '工作原理': 'How It Works',
+      '供应商': 'Providers',
+      '接入方式': 'Integration',
+      '优势': 'Advantages',
+      '文档': 'Docs',
+      '开始使用 →': 'Get Started →',
+      '实时路由中 · 40+ 供应商在线': 'Live routing · 40+ providers online',
+      '一个接口': 'One API',
+      '连接全部 AI': 'Connect Every AI',
+      '147 AI 是企业级大模型 API 中转网关——将': '147 AI is an enterprise LLM API gateway that aggregates',
+      '等 40+ 供应商聚合为单一 OpenAI-compatible 接口。智能路由在成本、延迟、稳定性之间实时寻优。': 'and 40+ other providers into one OpenAI-compatible API. Smart routing continuously optimizes for cost, latency, and reliability.',
+      '复制': 'Copy',
+      '获取 API Key': 'Get API Key',
+      '快速接入': 'Quick Start',
+      '支持 40+ 主流 API 供应商': 'Supports 40+ leading API providers',
+      '三步路由，': 'Route in three steps, ',
+      '毫秒级响应': 'millisecond response',
+      '无需了解每家供应商的差异——发一次请求，147 AI 自动完成最优路由决策。': 'Send one request without learning each provider\'s differences. 147 AI automatically chooses the best route.',
+      '你的应用': 'Your App',
+      '使用标准 OpenAI SDK，将 base_url 指向 147 AI。无需修改任何业务逻辑。': 'Use the standard OpenAI SDK and point base_url to 147 AI. No business logic changes required.',
+      '147 AI 网关': '147 AI Gateway',
+      '智能路由引擎实时评估所有供应商的价格、延迟与可用率，选出最优链路。': 'The smart routing engine evaluates provider price, latency, and availability in real time to choose the best path.',
+      'API 供应商': 'API Providers',
+      '请求被转发至最优供应商，响应原样返回——对你的代码完全透明。': 'Requests are forwarded to the best provider and returned transparently to your code.',
+      '供应商生态': 'Provider Ecosystem',
+      '接入': 'Connect to',
+      '40+ 供应商': '40+ providers',
+      '所有供应商随时可切换，一行代码改变模型，无需重新申请 API Key。': 'Switch providers anytime and change models with one line of code. No need to apply for new API keys.',
+      '极简接入': 'Simple Integration',
+      '三步创建令牌，': 'Create a token in three steps, ',
+      '即刻接入': 'start instantly',
+      '无需申请任何原始 API Key——注册后即可创建令牌，选择渠道分组，替换两行配置即可。': 'No need to request any upstream API key. Register, create a token, choose a channel group, and replace two config lines.',
+      '注册 & 登录': 'Sign Up & Log In',
+      '注册账号并充值额度，进入控制台的「令牌管理」页面，即可开始创建专属令牌。': 'Create an account, add balance, then open Token Management in the console to create your own token.',
+      '无需申请任何原始 API Key': 'No upstream API key required',
+      '按需充值，余额永久有效': 'Top up as needed; balance never expires',
+      '可创建多个令牌独立管控': 'Create multiple independently managed tokens',
+      '支持设置 IP 限制与额度上限': 'Set IP restrictions and quota limits',
+      '创建令牌': 'Create Token',
+      '命名令牌，选择渠道分组（决定后端供应商与定价倍率），一键生成 sk-xxx 密钥。': 'Name the token, choose a channel group that controls providers and pricing, then generate an sk-xxx key.',
+      '创建新的令牌': 'Create New Token',
+      '令牌名称': 'Token Name',
+      '渠道分组': 'Channel Group',
+      'Claude渠道': 'Claude Channel',
+      'OpenAI渠道': 'OpenAI Channel',
+      'Grok渠道': 'Grok Channel',
+      'Gemini渠道': 'Gemini Channel',
+      'GLM渠道': 'GLM Channel',
+      'Qwen渠道': 'Qwen Channel',
+      'DeepSeek渠道': 'DeepSeek Channel',
+      'Kimi渠道': 'Kimi Channel',
+      '提 交': 'Submit',
+      '已生成': 'Generated',
+      '替换两行配置': 'Replace Two Config Lines',
+      '将': 'Replace',
+      '与': 'and',
+      '替换为令牌值。业务逻辑零改动，原有 SDK 完全兼容。': 'with your token values. Your business logic stays unchanged and the existing SDK remains fully compatible.',
+      '迁移前': 'Before',
+      '迁移后': 'After',
+      '# ✓ 令牌': '# ✓ token',
+      '# ✗ 直连': '# ✗ direct',
+      '# base_url 默认 api.openai.com': '# base_url defaults to api.openai.com',
+      '# 仅限 OpenAI 模型': '# OpenAI models only',
+      '核心优势': 'Core Advantages',
+      '为什么选择': 'Why Choose ',
+      '工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。': 'Industrial-grade infrastructure. We handle API provider complexity so you can focus on your product.',
+      '主流模型覆盖': 'Mainstream Model Coverage',
+      '一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。': 'Call GPT, Claude, Gemini, DeepSeek and other leading models from one place, with continuous expansion and no multi-account management.',
+      '个模型': 'models',
+      '多模态支持': 'Multimodal Support',
+      '文本生成、图像理解、语音合成跨模态统一接入，同一套 SDK 覆盖全场景业务需求。': 'Unified access for text generation, image understanding, and speech synthesis across one SDK.',
+      '种模态': 'modalities',
+      '价格优势': 'Pricing Advantage',
+      '官方渠道正规授权，定价低至官方一半，按量计费无最低消费，大幅降低 AI 调用成本。': 'Officially authorized channels with pricing from half of official rates, pay-as-you-go billing, and no minimum spend.',
+      '50%起': 'from 50%',
+      '官方定价': 'official pricing',
+      '专线低延迟': 'Dedicated Low Latency',
+      '全球专线直连各供应商，绕过公网拥塞，额外引入延迟严格控制在 50ms 以内。': 'Global dedicated lines connect directly to providers and avoid public network congestion, keeping added latency within 50ms.',
+      'ms 额外延迟': 'ms added latency',
+      '结算友好': 'Business-Friendly Billing',
+      '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Supports CNY top-ups and enterprise invoices, avoiding FX risk and overseas payment hurdles.',
+      '人民币': 'CNY',
+      '结算·企业发票': 'settlement · invoices',
+      '接口兼容': 'API Compatibility',
+      '完全对标 OpenAI API 格式，同时支持各家原生请求格式，迁移零改造，原有代码直接复用。': 'Fully compatible with the OpenAI API format while also supporting native provider request formats for zero-refactor migration.',
+      '兼容·各家原生格式': 'compatible · native formats',
+      '文心一言': 'ERNIE Bot',
+      '通义千问': 'Tongyi Qianwen',
+      '讯飞星火': 'iFlytek Spark',
+    },
+  },
+};
+
+Object.assign(HOME_I18N, {
+  fr: {
+    title: '147 AI — Passerelle API LLM d\'entreprise',
+    qrAlt: 'Scannez pour nous ajouter sur WeChat',
+    text: {
+      '扫码添加微信': 'Scannez pour nous ajouter sur WeChat',
+      '已复制 ✓': 'Copié ✓',
+      '工作原理': 'Fonctionnement',
+      '供应商': 'Fournisseurs',
+      '接入方式': 'Intégration',
+      '优势': 'Avantages',
+      '文档': 'Docs',
+      '开始使用 →': 'Commencer →',
+      '实时路由中 · 40+ 供应商在线': 'Routage en direct · 40+ fournisseurs en ligne',
+      '一个接口': 'Une seule API',
+      '连接全部 AI': 'Connectez toute l\'IA',
+      '147 AI 是企业级大模型 API 中转网关——将': '147 AI est une passerelle API LLM d\'entreprise qui agrège',
+      '等 40+ 供应商聚合为单一 OpenAI-compatible 接口。智能路由在成本、延迟、稳定性之间实时寻优。': 'et plus de 40 autres fournisseurs dans une API compatible OpenAI. Le routage intelligent optimise en continu le coût, la latence et la fiabilité.',
+      '复制': 'Copier',
+      '获取 API Key': 'Obtenir une clé API',
+      '快速接入': 'Démarrage rapide',
+      '支持 40+ 主流 API 供应商': 'Prend en charge 40+ fournisseurs API majeurs',
+      '三步路由，': 'Routage en trois étapes, ',
+      '毫秒级响应': 'réponse en millisecondes',
+      '无需了解每家供应商的差异——发一次请求，147 AI 自动完成最优路由决策。': 'Envoyez une seule requête sans gérer les différences entre fournisseurs. 147 AI choisit automatiquement la meilleure route.',
+      '你的应用': 'Votre application',
+      '使用标准 OpenAI SDK，将 base_url 指向 147 AI。无需修改任何业务逻辑。': 'Utilisez le SDK OpenAI standard et pointez base_url vers 147 AI. Aucune logique métier à modifier.',
+      '147 AI 网关': 'Passerelle 147 AI',
+      '智能路由引擎实时评估所有供应商的价格、延迟与可用率，选出最优链路。': 'Le moteur de routage évalue en temps réel les prix, la latence et la disponibilité pour choisir le meilleur chemin.',
+      'API 供应商': 'Fournisseurs API',
+      '请求被转发至最优供应商，响应原样返回——对你的代码完全透明。': 'Les requêtes sont envoyées au meilleur fournisseur et les réponses reviennent de façon transparente pour votre code.',
+      '供应商生态': 'Écosystème fournisseurs',
+      '接入': 'Connectez',
+      '40+ 供应商': '40+ fournisseurs',
+      '所有供应商随时可切换，一行代码改变模型，无需重新申请 API Key。': 'Changez de fournisseur à tout moment et de modèle avec une ligne de code, sans redemander de clé API.',
+      '极简接入': 'Intégration simple',
+      '三步创建令牌，': 'Créez un jeton en trois étapes, ',
+      '即刻接入': 'démarrez instantanément',
+      '无需申请任何原始 API Key——注册后即可创建令牌，选择渠道分组，替换两行配置即可。': 'Aucune clé API fournisseur requise. Inscrivez-vous, créez un jeton, choisissez un groupe de canaux et remplacez deux lignes de configuration.',
+      '注册 & 登录': 'Inscription & connexion',
+      '注册账号并充值额度，进入控制台的「令牌管理」页面，即可开始创建专属令牌。': 'Créez un compte, rechargez votre solde, puis ouvrez Gestion des jetons dans la console pour créer votre jeton.',
+      '无需申请任何原始 API Key': 'Aucune clé API fournisseur requise',
+      '按需充值，余额永久有效': 'Recharge à la demande, solde sans expiration',
+      '可创建多个令牌独立管控': 'Créez plusieurs jetons gérés séparément',
+      '支持设置 IP 限制与额度上限': 'Définissez restrictions IP et limites de quota',
+      '创建令牌': 'Créer un jeton',
+      '命名令牌，选择渠道分组（决定后端供应商与定价倍率），一键生成 sk-xxx 密钥。': 'Nommez le jeton, choisissez un groupe de canaux qui contrôle fournisseurs et tarifs, puis générez une clé sk-xxx.',
+      '创建新的令牌': 'Créer un nouveau jeton',
+      '令牌名称': 'Nom du jeton',
+      '渠道分组': 'Groupe de canaux',
+      'Claude渠道': 'Canal Claude',
+      'OpenAI渠道': 'Canal OpenAI',
+      'Grok渠道': 'Canal Grok',
+      'Gemini渠道': 'Canal Gemini',
+      'GLM渠道': 'Canal GLM',
+      'Qwen渠道': 'Canal Qwen',
+      'DeepSeek渠道': 'Canal DeepSeek',
+      'Kimi渠道': 'Canal Kimi',
+      '提 交': 'Envoyer',
+      '已生成': 'Généré',
+      '替换两行配置': 'Remplacez deux lignes de configuration',
+      '将': 'Remplacez',
+      '与': 'et',
+      '替换为令牌值。业务逻辑零改动，原有 SDK 完全兼容。': 'par les valeurs de votre jeton. Votre logique métier reste inchangée et le SDK existant reste compatible.',
+      '迁移前': 'Avant',
+      '迁移后': 'Après',
+      '# ✓ 令牌': '# ✓ jeton',
+      '# ✗ 直连': '# ✗ direct',
+      '# base_url 默认 api.openai.com': '# base_url pointe par défaut vers api.openai.com',
+      '# 仅限 OpenAI 模型': '# modèles OpenAI uniquement',
+      '核心优势': 'Avantages clés',
+      '为什么选择': 'Pourquoi choisir ',
+      '工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。': 'Une infrastructure industrielle. Nous gérons la complexité des fournisseurs API afin que vous puissiez vous concentrer sur votre produit.',
+      '主流模型覆盖': 'Couverture des modèles majeurs',
+      '一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。': 'Appelez GPT, Claude, Gemini, DeepSeek et d\'autres modèles majeurs depuis un seul endroit, sans gérer plusieurs comptes.',
+      '个模型': 'modèles',
+      '多模态支持': 'Support multimodal',
+      '文本生成、图像理解、语音合成跨模态统一接入，同一套 SDK 覆盖全场景业务需求。': 'Accès unifié à la génération de texte, la compréhension d\'images et la synthèse vocale avec un seul SDK.',
+      '种模态': 'modalités',
+      '价格优势': 'Avantage tarifaire',
+      '官方渠道正规授权，定价低至官方一半，按量计费无最低消费，大幅降低 AI 调用成本。': 'Canaux officiellement autorisés, prix dès la moitié des tarifs officiels, paiement à l\'usage sans dépense minimale.',
+      '50%起': 'dès 50%',
+      '官方定价': 'du tarif officiel',
+      '专线低延迟': 'Faible latence dédiée',
+      '全球专线直连各供应商，绕过公网拥塞，额外引入延迟严格控制在 50ms 以内。': 'Des lignes dédiées mondiales se connectent directement aux fournisseurs et évitent la congestion publique, avec une latence ajoutée sous 50 ms.',
+      'ms 额外延迟': 'ms de latence ajoutée',
+      '结算友好': 'Facturation adaptée aux entreprises',
+      '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Recharge en CNY et factures d\'entreprise, sans risque de change ni obstacles de paiement international.',
+      '人民币': 'CNY',
+      '结算·企业发票': 'règlement · factures',
+      '接口兼容': 'Compatibilité API',
+      '完全对标 OpenAI API 格式，同时支持各家原生请求格式，迁移零改造，原有代码直接复用。': 'Compatibilité complète avec le format OpenAI API et prise en charge des formats natifs des fournisseurs pour migrer sans refonte.',
+      '兼容·各家原生格式': 'compatible · formats natifs',
+      '文心一言': 'ERNIE Bot',
+      '通义千问': 'Tongyi Qianwen',
+      '讯飞星火': 'iFlytek Spark',
+    },
+  },
+  ja: {
+    title: '147 AI — エンタープライズ LLM API ゲートウェイ',
+    qrAlt: 'WeChat で追加するにはスキャン',
+    text: {
+      '扫码添加微信': 'WeChat で追加するにはスキャン',
+      '已复制 ✓': 'コピーしました ✓',
+      '工作原理': '仕組み',
+      '供应商': 'プロバイダー',
+      '接入方式': '接続方法',
+      '优势': '強み',
+      '文档': 'ドキュメント',
+      '开始使用 →': '始める →',
+      '实时路由中 · 40+ 供应商在线': 'リアルタイムルーティング · 40+ プロバイダー稼働中',
+      '一个接口': '1つの API',
+      '连接全部 AI': 'すべての AI に接続',
+      '147 AI 是企业级大模型 API 中转网关——将': '147 AI はエンタープライズ向け LLM API ゲートウェイで、',
+      '等 40+ 供应商聚合为单一 OpenAI-compatible 接口。智能路由在成本、延迟、稳定性之间实时寻优。': 'など 40+ のプロバイダーを単一の OpenAI 互換 API に統合します。スマートルーティングがコスト、遅延、安定性をリアルタイムに最適化します。',
+      '复制': 'コピー',
+      '获取 API Key': 'API Key を取得',
+      '快速接入': 'クイックスタート',
+      '支持 40+ 主流 API 供应商': '40+ の主要 API プロバイダーに対応',
+      '三步路由，': '3 ステップのルーティング、',
+      '毫秒级响应': 'ミリ秒級レスポンス',
+      '无需了解每家供应商的差异——发一次请求，147 AI 自动完成最优路由决策。': '各プロバイダーの違いを意識せず 1 回リクエストするだけで、147 AI が最適なルートを自動選択します。',
+      '你的应用': 'あなたのアプリ',
+      '使用标准 OpenAI SDK，将 base_url 指向 147 AI。无需修改任何业务逻辑。': '標準の OpenAI SDK を使い、base_url を 147 AI に向けるだけ。ビジネスロジックの変更は不要です。',
+      '147 AI 网关': '147 AI ゲートウェイ',
+      '智能路由引擎实时评估所有供应商的价格、延迟与可用率，选出最优链路。': 'スマートルーティングエンジンが価格、遅延、可用性をリアルタイム評価し、最適な経路を選びます。',
+      'API 供应商': 'API プロバイダー',
+      '请求被转发至最优供应商，响应原样返回——对你的代码完全透明。': 'リクエストは最適なプロバイダーへ転送され、レスポンスはそのまま返ります。コードからは完全に透過的です。',
+      '供应商生态': 'プロバイダーエコシステム',
+      '接入': '接続',
+      '40+ 供应商': '40+ プロバイダー',
+      '所有供应商随时可切换，一行代码改变模型，无需重新申请 API Key。': 'プロバイダーはいつでも切り替え可能。1 行でモデルを変更でき、新しい API Key 申請は不要です。',
+      '极简接入': 'かんたん接続',
+      '三步创建令牌，': '3 ステップでトークンを作成し、',
+      '即刻接入': 'すぐに接続',
+      '无需申请任何原始 API Key——注册后即可创建令牌，选择渠道分组，替换两行配置即可。': '上流の API Key は不要です。登録後にトークンを作成し、チャネルグループを選び、設定を 2 行置き換えるだけです。',
+      '注册 & 登录': '登録 & ログイン',
+      '注册账号并充值额度，进入控制台的「令牌管理」页面，即可开始创建专属令牌。': 'アカウントを作成して残高をチャージし、コンソールの「トークン管理」から専用トークンを作成できます。',
+      '无需申请任何原始 API Key': '上流 API Key は不要',
+      '按需充值，余额永久有效': '必要に応じてチャージ、残高は無期限',
+      '可创建多个令牌独立管控': '複数トークンを個別に管理可能',
+      '支持设置 IP 限制与额度上限': 'IP 制限とクォータ上限に対応',
+      '创建令牌': 'トークンを作成',
+      '命名令牌，选择渠道分组（决定后端供应商与定价倍率），一键生成 sk-xxx 密钥。': 'トークン名とチャネルグループを選ぶと、プロバイダーと価格倍率が決まり、sk-xxx キーを生成できます。',
+      '创建新的令牌': '新しいトークンを作成',
+      '令牌名称': 'トークン名',
+      '渠道分组': 'チャネルグループ',
+      'Claude渠道': 'Claude チャネル',
+      'OpenAI渠道': 'OpenAI チャネル',
+      'Grok渠道': 'Grok チャネル',
+      'Gemini渠道': 'Gemini チャネル',
+      'GLM渠道': 'GLM チャネル',
+      'Qwen渠道': 'Qwen チャネル',
+      'DeepSeek渠道': 'DeepSeek チャネル',
+      'Kimi渠道': 'Kimi チャネル',
+      '提 交': '送信',
+      '已生成': '生成済み',
+      '替换两行配置': '2 行の設定を置き換え',
+      '将': '',
+      '与': 'と',
+      '替换为令牌值。业务逻辑零改动，原有 SDK 完全兼容。': 'をトークン値に置き換えます。ビジネスロジックは変更不要で、既存 SDK と完全互換です。',
+      '迁移前': '移行前',
+      '迁移后': '移行後',
+      '# ✓ 令牌': '# ✓ トークン',
+      '# ✗ 直连': '# ✗ 直接接続',
+      '# base_url 默认 api.openai.com': '# base_url の既定値は api.openai.com',
+      '# 仅限 OpenAI 模型': '# OpenAI モデルのみ',
+      '核心优势': '主な強み',
+      '为什么选择': '選ばれる理由 ',
+      '工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。': '産業グレードのインフラです。API プロバイダー管理の複雑さは私たちに任せ、製品に集中できます。',
+      '主流模型覆盖': '主要モデルをカバー',
+      '一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。': 'GPT、Claude、Gemini、DeepSeek などの主要モデルをワンストップで利用でき、複数アカウント管理は不要です。',
+      '个模型': 'モデル',
+      '多模态支持': 'マルチモーダル対応',
+      '文本生成、图像理解、语音合成跨模态统一接入，同一套 SDK 覆盖全场景业务需求。': 'テキスト生成、画像理解、音声合成を 1 つの SDK で統合利用できます。',
+      '种模态': 'モダリティ',
+      '价格优势': '価格優位性',
+      '官方渠道正规授权，定价低至官方一半，按量计费无最低消费，大幅降低 AI 调用成本。': '正式認可チャネルを利用し、公式価格の半額から従量課金、最低利用額なしで AI コストを削減します。',
+      '50%起': '50% から',
+      '官方定价': '公式価格',
+      '专线低延迟': '専用線の低遅延',
+      '全球专线直连各供应商，绕过公网拥塞，额外引入延迟严格控制在 50ms 以内。': 'グローバル専用線で各プロバイダーに直結し、公衆網の混雑を回避。追加遅延は 50ms 以内です。',
+      'ms 额外延迟': 'ms の追加遅延',
+      '结算友好': '使いやすい決済',
+      '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': '人民元チャージと企業請求書に対応し、為替リスクや海外決済の負担を抑えます。',
+      '人民币': 'CNY',
+      '结算·企业发票': '決済 · 企業請求書',
+      '接口兼容': 'API 互換',
+      '完全对标 OpenAI API 格式，同时支持各家原生请求格式，迁移零改造，原有代码直接复用。': 'OpenAI API 形式と完全互換で、各社ネイティブ形式にも対応。既存コードをそのまま再利用できます。',
+      '兼容·各家原生格式': '互換 · ネイティブ形式',
+      '文心一言': 'ERNIE Bot',
+      '通义千问': 'Tongyi Qianwen',
+      '讯飞星火': 'iFlytek Spark',
+    },
+  },
+  ru: {
+    title: '147 AI — корпоративный шлюз API для LLM',
+    qrAlt: 'Отсканируйте, чтобы добавить нас в WeChat',
+    text: {
+      '扫码添加微信': 'Отсканируйте, чтобы добавить нас в WeChat',
+      '已复制 ✓': 'Скопировано ✓',
+      '工作原理': 'Как это работает',
+      '供应商': 'Провайдеры',
+      '接入方式': 'Интеграция',
+      '优势': 'Преимущества',
+      '文档': 'Документация',
+      '开始使用 →': 'Начать →',
+      '实时路由中 · 40+ 供应商在线': 'Маршрутизация в реальном времени · 40+ провайдеров онлайн',
+      '一个接口': 'Один API',
+      '连接全部 AI': 'подключает весь AI',
+      '147 AI 是企业级大模型 API 中转网关——将': '147 AI — корпоративный шлюз API для LLM, объединяющий',
+      '等 40+ 供应商聚合为单一 OpenAI-compatible 接口。智能路由在成本、延迟、稳定性之间实时寻优。': 'и более 40 других провайдеров в единый OpenAI-совместимый API. Умная маршрутизация постоянно оптимизирует стоимость, задержку и надежность.',
+      '复制': 'Копировать',
+      '获取 API Key': 'Получить API Key',
+      '快速接入': 'Быстрый старт',
+      '支持 40+ 主流 API 供应商': 'Поддержка 40+ ведущих API-провайдеров',
+      '三步路由，': 'Маршрутизация в три шага, ',
+      '毫秒级响应': 'ответ за миллисекунды',
+      '无需了解每家供应商的差异——发一次请求，147 AI 自动完成最优路由决策。': 'Отправьте один запрос без изучения различий между провайдерами. 147 AI автоматически выберет лучший маршрут.',
+      '你的应用': 'Ваше приложение',
+      '使用标准 OpenAI SDK，将 base_url 指向 147 AI。无需修改任何业务逻辑。': 'Используйте стандартный OpenAI SDK и укажите base_url на 147 AI. Бизнес-логику менять не нужно.',
+      '147 AI 网关': 'Шлюз 147 AI',
+      '智能路由引擎实时评估所有供应商的价格、延迟与可用率，选出最优链路。': 'Механизм умной маршрутизации в реальном времени оценивает цены, задержки и доступность, выбирая лучший путь.',
+      'API 供应商': 'API-провайдеры',
+      '请求被转发至最优供应商，响应原样返回——对你的代码完全透明。': 'Запрос отправляется лучшему провайдеру, а ответ возвращается прозрачно для вашего кода.',
+      '供应商生态': 'Экосистема провайдеров',
+      '接入': 'Подключите',
+      '40+ 供应商': '40+ провайдеров',
+      '所有供应商随时可切换，一行代码改变模型，无需重新申请 API Key。': 'Переключайте провайдеров в любое время и меняйте модель одной строкой кода без новой заявки на API Key.',
+      '极简接入': 'Простая интеграция',
+      '三步创建令牌，': 'Создайте токен в три шага, ',
+      '即刻接入': 'начните сразу',
+      '无需申请任何原始 API Key——注册后即可创建令牌，选择渠道分组，替换两行配置即可。': 'Не нужен исходный API Key провайдера. Зарегистрируйтесь, создайте токен, выберите группу каналов и замените две строки конфигурации.',
+      '注册 & 登录': 'Регистрация и вход',
+      '注册账号并充值额度，进入控制台的「令牌管理」页面，即可开始创建专属令牌。': 'Создайте аккаунт, пополните баланс и откройте «Управление токенами» в консоли, чтобы создать свой токен.',
+      '无需申请任何原始 API Key': 'Исходный API Key не требуется',
+      '按需充值，余额永久有效': 'Пополнение по необходимости, баланс не сгорает',
+      '可创建多个令牌独立管控': 'Несколько токенов с независимым управлением',
+      '支持设置 IP 限制与额度上限': 'IP-ограничения и лимиты квоты',
+      '创建令牌': 'Создать токен',
+      '命名令牌，选择渠道分组（决定后端供应商与定价倍率），一键生成 sk-xxx 密钥。': 'Назовите токен, выберите группу каналов, определяющую провайдеров и тарифы, затем сгенерируйте ключ sk-xxx.',
+      '创建新的令牌': 'Создать новый токен',
+      '令牌名称': 'Название токена',
+      '渠道分组': 'Группа каналов',
+      'Claude渠道': 'Канал Claude',
+      'OpenAI渠道': 'Канал OpenAI',
+      'Grok渠道': 'Канал Grok',
+      'Gemini渠道': 'Канал Gemini',
+      'GLM渠道': 'Канал GLM',
+      'Qwen渠道': 'Канал Qwen',
+      'DeepSeek渠道': 'Канал DeepSeek',
+      'Kimi渠道': 'Канал Kimi',
+      '提 交': 'Отправить',
+      '已生成': 'Создано',
+      '替换两行配置': 'Замените две строки конфигурации',
+      '将': 'Замените',
+      '与': 'и',
+      '替换为令牌值。业务逻辑零改动，原有 SDK 完全兼容。': 'на значения токена. Бизнес-логика не меняется, существующий SDK полностью совместим.',
+      '迁移前': 'До миграции',
+      '迁移后': 'После миграции',
+      '# ✓ 令牌': '# ✓ токен',
+      '# ✗ 直连': '# ✗ прямое подключение',
+      '# base_url 默认 api.openai.com': '# base_url по умолчанию api.openai.com',
+      '# 仅限 OpenAI 模型': '# только модели OpenAI',
+      '核心优势': 'Ключевые преимущества',
+      '为什么选择': 'Почему выбирают ',
+      '工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。': 'Промышленная инфраструктура. Мы берем на себя сложность работы с API-провайдерами, чтобы вы сосредоточились на продукте.',
+      '主流模型覆盖': 'Покрытие ведущих моделей',
+      '一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。': 'Единый доступ к GPT, Claude, Gemini, DeepSeek и другим ведущим моделям без управления множеством аккаунтов.',
+      '个模型': 'моделей',
+      '多模态支持': 'Мультимодальная поддержка',
+      '文本生成、图像理解、语音合成跨模态统一接入，同一套 SDK 覆盖全场景业务需求。': 'Единый SDK для генерации текста, понимания изображений и синтеза речи во всех сценариях.',
+      '种模态': 'модальности',
+      '价格优势': 'Ценовое преимущество',
+      '官方渠道正规授权，定价低至官方一半，按量计费无最低消费，大幅降低 AI 调用成本。': 'Официально авторизованные каналы, цены от половины официальных тарифов, оплата по факту без минимального платежа.',
+      '50%起': 'от 50%',
+      '官方定价': 'официальной цены',
+      '专线低延迟': 'Низкая задержка по выделенным линиям',
+      '全球专线直连各供应商，绕过公网拥塞，额外引入延迟严格控制在 50ms 以内。': 'Глобальные выделенные линии подключаются напрямую к провайдерам и обходят перегрузки публичной сети, добавляя менее 50 мс.',
+      'ms 额外延迟': 'мс доп. задержки',
+      '结算友好': 'Удобные расчеты',
+      '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Поддержка пополнения в CNY и корпоративных счетов, без валютных рисков и сложностей международных платежей.',
+      '人民币': 'CNY',
+      '结算·企业发票': 'расчеты · счета',
+      '接口兼容': 'Совместимость API',
+      '完全对标 OpenAI API 格式，同时支持各家原生请求格式，迁移零改造，原有代码直接复用。': 'Полная совместимость с форматом OpenAI API и поддержка нативных форматов провайдеров для миграции без переработки.',
+      '兼容·各家原生格式': 'совместимость · нативные форматы',
+      '文心一言': 'ERNIE Bot',
+      '通义千问': 'Tongyi Qianwen',
+      '讯飞星火': 'iFlytek Spark',
+    },
+  },
+  vi: {
+    title: '147 AI — Cổng API LLM cho doanh nghiệp',
+    qrAlt: 'Quét để thêm chúng tôi trên WeChat',
+    text: {
+      '扫码添加微信': 'Quét để thêm chúng tôi trên WeChat',
+      '已复制 ✓': 'Đã sao chép ✓',
+      '工作原理': 'Cách hoạt động',
+      '供应商': 'Nhà cung cấp',
+      '接入方式': 'Tích hợp',
+      '优势': 'Lợi thế',
+      '文档': 'Tài liệu',
+      '开始使用 →': 'Bắt đầu →',
+      '实时路由中 · 40+ 供应商在线': 'Định tuyến thời gian thực · 40+ nhà cung cấp trực tuyến',
+      '一个接口': 'Một API',
+      '连接全部 AI': 'kết nối mọi AI',
+      '147 AI 是企业级大模型 API 中转网关——将': '147 AI là cổng API LLM cấp doanh nghiệp, hợp nhất',
+      '等 40+ 供应商聚合为单一 OpenAI-compatible 接口。智能路由在成本、延迟、稳定性之间实时寻优。': 'và hơn 40 nhà cung cấp khác vào một API tương thích OpenAI. Định tuyến thông minh liên tục tối ưu chi phí, độ trễ và độ ổn định.',
+      '复制': 'Sao chép',
+      '获取 API Key': 'Lấy API Key',
+      '快速接入': 'Bắt đầu nhanh',
+      '支持 40+ 主流 API 供应商': 'Hỗ trợ 40+ nhà cung cấp API phổ biến',
+      '三步路由，': 'Định tuyến trong ba bước, ',
+      '毫秒级响应': 'phản hồi mili giây',
+      '无需了解每家供应商的差异——发一次请求，147 AI 自动完成最优路由决策。': 'Chỉ cần gửi một yêu cầu mà không cần hiểu khác biệt giữa từng nhà cung cấp. 147 AI tự chọn tuyến tối ưu.',
+      '你的应用': 'Ứng dụng của bạn',
+      '使用标准 OpenAI SDK，将 base_url 指向 147 AI。无需修改任何业务逻辑。': 'Dùng OpenAI SDK chuẩn và trỏ base_url tới 147 AI. Không cần sửa logic nghiệp vụ.',
+      '147 AI 网关': 'Cổng 147 AI',
+      '智能路由引擎实时评估所有供应商的价格、延迟与可用率，选出最优链路。': 'Bộ định tuyến thông minh đánh giá giá, độ trễ và khả dụng của nhà cung cấp theo thời gian thực để chọn đường tốt nhất.',
+      'API 供应商': 'Nhà cung cấp API',
+      '请求被转发至最优供应商，响应原样返回——对你的代码完全透明。': 'Yêu cầu được chuyển đến nhà cung cấp tối ưu và phản hồi trả về minh bạch với mã của bạn.',
+      '供应商生态': 'Hệ sinh thái nhà cung cấp',
+      '接入': 'Kết nối',
+      '40+ 供应商': '40+ nhà cung cấp',
+      '所有供应商随时可切换，一行代码改变模型，无需重新申请 API Key。': 'Chuyển nhà cung cấp bất cứ lúc nào và đổi mô hình bằng một dòng mã, không cần xin API Key mới.',
+      '极简接入': 'Tích hợp đơn giản',
+      '三步创建令牌，': 'Tạo token trong ba bước, ',
+      '即刻接入': 'bắt đầu ngay',
+      '无需申请任何原始 API Key——注册后即可创建令牌，选择渠道分组，替换两行配置即可。': 'Không cần API Key gốc. Đăng ký, tạo token, chọn nhóm kênh và thay hai dòng cấu hình.',
+      '注册 & 登录': 'Đăng ký & đăng nhập',
+      '注册账号并充值额度，进入控制台的「令牌管理」页面，即可开始创建专属令牌。': 'Tạo tài khoản, nạp số dư rồi vào trang Quản lý token trong console để tạo token riêng.',
+      '无需申请任何原始 API Key': 'Không cần API Key gốc',
+      '按需充值，余额永久有效': 'Nạp theo nhu cầu, số dư không hết hạn',
+      '可创建多个令牌独立管控': 'Tạo nhiều token và quản lý độc lập',
+      '支持设置 IP 限制与额度上限': 'Hỗ trợ giới hạn IP và hạn mức',
+      '创建令牌': 'Tạo token',
+      '命名令牌，选择渠道分组（决定后端供应商与定价倍率），一键生成 sk-xxx 密钥。': 'Đặt tên token, chọn nhóm kênh quyết định nhà cung cấp và hệ số giá, rồi tạo khóa sk-xxx.',
+      '创建新的令牌': 'Tạo token mới',
+      '令牌名称': 'Tên token',
+      '渠道分组': 'Nhóm kênh',
+      'Claude渠道': 'Kênh Claude',
+      'OpenAI渠道': 'Kênh OpenAI',
+      'Grok渠道': 'Kênh Grok',
+      'Gemini渠道': 'Kênh Gemini',
+      'GLM渠道': 'Kênh GLM',
+      'Qwen渠道': 'Kênh Qwen',
+      'DeepSeek渠道': 'Kênh DeepSeek',
+      'Kimi渠道': 'Kênh Kimi',
+      '提 交': 'Gửi',
+      '已生成': 'Đã tạo',
+      '替换两行配置': 'Thay hai dòng cấu hình',
+      '将': 'Thay',
+      '与': 'và',
+      '替换为令牌值。业务逻辑零改动，原有 SDK 完全兼容。': 'bằng giá trị token. Logic nghiệp vụ không đổi và SDK hiện có vẫn tương thích hoàn toàn.',
+      '迁移前': 'Trước khi chuyển đổi',
+      '迁移后': 'Sau khi chuyển đổi',
+      '# ✓ 令牌': '# ✓ token',
+      '# ✗ 直连': '# ✗ kết nối trực tiếp',
+      '# base_url 默认 api.openai.com': '# base_url mặc định là api.openai.com',
+      '# 仅限 OpenAI 模型': '# chỉ mô hình OpenAI',
+      '核心优势': 'Lợi thế cốt lõi',
+      '为什么选择': 'Vì sao chọn ',
+      '工业级基础设施，把 API 供应商管理的所有复杂度留给我们，你只需要专注产品。': 'Hạ tầng cấp công nghiệp. Chúng tôi xử lý độ phức tạp của nhà cung cấp API để bạn tập trung vào sản phẩm.',
+      '主流模型覆盖': 'Bao phủ mô hình phổ biến',
+      '一站式调用 GPT、Claude、Gemini、DeepSeek 等顶级模型，持续扩充，无需多账号管理。': 'Gọi GPT, Claude, Gemini, DeepSeek và các mô hình hàng đầu từ một nơi, không cần quản lý nhiều tài khoản.',
+      '个模型': 'mô hình',
+      '多模态支持': 'Hỗ trợ đa phương thức',
+      '文本生成、图像理解、语音合成跨模态统一接入，同一套 SDK 覆盖全场景业务需求。': 'Một SDK cho sinh văn bản, hiểu hình ảnh và tổng hợp giọng nói trên nhiều kịch bản.',
+      '种模态': 'phương thức',
+      '价格优势': 'Lợi thế giá',
+      '官方渠道正规授权，定价低至官方一半，按量计费无最低消费，大幅降低 AI 调用成本。': 'Kênh được ủy quyền chính thức, giá từ một nửa giá chính thức, trả theo mức dùng và không có mức tối thiểu.',
+      '50%起': 'từ 50%',
+      '官方定价': 'giá chính thức',
+      '专线低延迟': 'Đường truyền riêng độ trễ thấp',
+      '全球专线直连各供应商，绕过公网拥塞，额外引入延迟严格控制在 50ms 以内。': 'Đường truyền riêng toàn cầu kết nối trực tiếp tới nhà cung cấp, tránh nghẽn mạng công cộng và giữ độ trễ thêm dưới 50ms.',
+      'ms 额外延迟': 'ms độ trễ thêm',
+      '结算友好': 'Thanh toán thân thiện',
+      '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Hỗ trợ nạp CNY và hóa đơn doanh nghiệp, giảm rủi ro tỷ giá và rào cản thanh toán quốc tế.',
+      '人民币': 'CNY',
+      '结算·企业发票': 'thanh toán · hóa đơn',
+      '接口兼容': 'Tương thích API',
+      '完全对标 OpenAI API 格式，同时支持各家原生请求格式，迁移零改造，原有代码直接复用。': 'Tương thích hoàn toàn định dạng OpenAI API và hỗ trợ định dạng gốc của từng nhà cung cấp để chuyển đổi không cần sửa mã.',
+      '兼容·各家原生格式': 'tương thích · định dạng gốc',
+      '文心一言': 'ERNIE Bot',
+      '通义千问': 'Tongyi Qianwen',
+      '讯飞星火': 'iFlytek Spark',
+    },
+  },
+});
+
+const HOME_I18N_GLOBAL_BILLING = {
+  zh: {
+    '结算友好': '灵活结算',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': '支持按站点灵活配置支付与结算方式，减少跨区域接入门槛，让团队按需管理预算与用量。',
+    '人民币': '灵活',
+    '结算·企业发票': '结算·预算管控',
+  },
+  en: {
+    '结算友好': 'Flexible Billing',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Flexible payment and billing options for global teams, with simpler cross-region onboarding and usage-based budget control.',
+    '人民币': 'Flexible',
+    '结算·企业发票': 'billing · budget control',
+  },
+  fr: {
+    '结算友好': 'Facturation flexible',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Options de paiement et de facturation flexibles pour les équipes internationales, avec une intégration multi-région simplifiée.',
+    '人民币': 'Flexible',
+    '结算·企业发票': 'facturation · budget',
+  },
+  ja: {
+    '结算友好': '柔軟な決済',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'グローバルチーム向けに柔軟な支払い・決済方法を提供し、地域をまたぐ導入と予算管理を簡単にします。',
+    '人民币': '柔軟',
+    '结算·企业发票': '決済 · 予算管理',
+  },
+  ru: {
+    '结算友好': 'Гибкие расчеты',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Гибкие способы оплаты и расчетов для международных команд, упрощенное подключение между регионами и контроль бюджета.',
+    '人民币': 'Гибко',
+    '结算·企业发票': 'расчеты · бюджет',
+  },
+  vi: {
+    '结算友好': 'Thanh toán linh hoạt',
+    '支持人民币充值，可开具企业发票，免去汇率风险与境外支付门槛，财务流程顺畅合规。': 'Tùy chọn thanh toán và đối soát linh hoạt cho đội ngũ toàn cầu, giúp triển khai đa khu vực và kiểm soát ngân sách dễ hơn.',
+    '人民币': 'Linh hoạt',
+    '结算·企业发票': 'thanh toán · ngân sách',
+  },
+};
+
+const DEFAULT_BRAND_NAME = '147 AI';
+let currentBrandName = resolveBrandName();
+let currentHomeLocale = resolveHomeLocale();
+
+function resolveBrandName() {
+  const params = new URLSearchParams(location.search);
+  const value = params.get('system_name') || params.get('site_name') || params.get('brand');
+  return normalizeBrandName(value);
+}
+
+function normalizeBrandName(value) {
+  const next = String(value || '').trim();
+  return next || DEFAULT_BRAND_NAME;
+}
+
+function getBrandMark(name) {
+  const value = normalizeBrandName(name);
+  const numeric = value.match(/\d+/);
+  if (numeric) return numeric[0].slice(0, 3);
+  const compact = value.replace(/[^a-z0-9]/gi, '');
+  return (compact.slice(0, 3) || 'AI').toUpperCase();
+}
+
+function isDomesticBrand() {
+  return currentBrandName.trim().toLowerCase() === DEFAULT_BRAND_NAME.toLowerCase();
+}
+
+function withBrandName(text) {
+  return String(text).replaceAll(DEFAULT_BRAND_NAME, currentBrandName);
+}
+
+function applyBrandElements() {
+  document.querySelectorAll('.logo').forEach(logo => {
+    const mark = logo.querySelector('.logo-mark');
+    if (mark) mark.textContent = getBrandMark(currentBrandName);
+    let textNode = Array.from(logo.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+    if (!textNode) {
+      textNode = document.createTextNode('');
+      logo.appendChild(textNode);
+    }
+    textNode.nodeValue = currentBrandName;
+  });
+}
+
+function setBrandName(value) {
+  const next = normalizeBrandName(value);
+  if (next === currentBrandName) {
+    applyBrandElements();
+    return;
+  }
+  currentBrandName = next;
+  applyHomeI18n();
+}
+
+function normalizeHomeLocale(value) {
+  const normalized = String(value || '').trim().replace(/_/g, '-').toLowerCase();
+  if (normalized.startsWith('en')) return 'en';
+  if (normalized.startsWith('zh')) return 'zh';
+  if (normalized.startsWith('fr')) return 'fr';
+  if (normalized.startsWith('ja')) return 'ja';
+  if (normalized.startsWith('ru')) return 'ru';
+  if (normalized.startsWith('vi')) return 'vi';
+  return '';
+}
+
+function resolveHomeLocale() {
+  const params = new URLSearchParams(location.search);
+  const candidates = [
+    params.get('lang'),
+    params.get('locale'),
+  ];
+  try { candidates.push(window.parent.localStorage.getItem('i18nextLng')); } catch (e) {}
+  try {
+    if (window.parent !== window) candidates.push(window.parent.document.documentElement.lang);
+  } catch (e) {}
+  try { candidates.push(localStorage.getItem('i18nextLng')); } catch (e) {}
+  if (navigator.languages) candidates.push(...navigator.languages);
+  candidates.push(navigator.language);
+  candidates.push(document.documentElement.lang);
+
+  for (const candidate of candidates) {
+    const locale = normalizeHomeLocale(candidate);
+    if (locale) return locale;
+  }
+  return 'zh';
+}
+
+function applyHomeI18n() {
+  const locale = HOME_I18N[currentHomeLocale] ? currentHomeLocale : 'zh';
+  const source = HOME_I18N.zh;
+  const target = HOME_I18N[locale] || source;
+  const textMap = target.text || {};
+  const sourceTextMap = HOME_I18N.en.text || {};
+  const globalBillingMap = isDomesticBrand() ? null : (HOME_I18N_GLOBAL_BILLING[locale] || HOME_I18N_GLOBAL_BILLING.en);
+
+  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : locale;
+  document.title = withBrandName(target.title || source.title);
+
+  const qrImg = document.getElementById('qr-img');
+  if (qrImg) qrImg.alt = target.qrAlt || source.qrAlt;
+
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || ['SCRIPT', 'STYLE'].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+      return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    const raw = node.nodeValue;
+    const trimmed = raw.trim();
+    if (!node.__homeI18nSource && Object.prototype.hasOwnProperty.call(sourceTextMap, trimmed)) {
+      node.__homeI18nSource = trimmed;
+    }
+    const original = node.__homeI18nSource;
+    if (!original) {
+      if (!node.__homeBrandSource && raw.includes(DEFAULT_BRAND_NAME)) {
+        node.__homeBrandSource = raw;
+      }
+      if (node.__homeBrandSource) {
+        node.nodeValue = node.__homeBrandSource.replaceAll(DEFAULT_BRAND_NAME, currentBrandName);
+      }
+      return;
+    }
+    const localized = globalBillingMap && globalBillingMap[original]
+      ? globalBillingMap[original]
+      : (locale === 'zh' ? original : (textMap[original] || original));
+    const next = withBrandName(localized);
+    node.nodeValue = raw.replace(trimmed, next);
+  });
+  applyBrandElements();
+}
+
+function setHomeLocale(nextLocale) {
+  const locale = normalizeHomeLocale(nextLocale);
+  if (!locale || locale === currentHomeLocale) return;
+  currentHomeLocale = locale;
+  applyHomeI18n();
+}
+
+window.addEventListener('message', event => {
+  const data = event.data;
+  if (data && typeof data.lang === 'string') {
+    setHomeLocale(data.lang);
+  }
+});
+
+applyHomeI18n();
+
+/* ─── Base URL：优先后台服务器地址，其次跟随当前部署域名，也支持 query 覆盖 ─── */
+function resolveBaseUrl() {
+  const params = new URLSearchParams(location.search);
+  const override = params.get('base_url') || params.get('baseUrl') || params.get('api_base_url');
+  const raw = override && override.trim() ? override.trim() : `${location.origin}/v1`;
+  return raw.replace(/\/+$/, '');
+}
+
+function normalizeBaseUrl(raw) {
+  const value = raw && raw.trim() ? raw.trim() : `${location.origin}/v1`;
+  return value.replace(/\/+$/, '');
+}
+
+function buildApiBaseUrl(serverAddress) {
+  const value = normalizeBaseUrl(serverAddress);
+  return value.endsWith('/v1') ? value : `${value}/v1`;
+}
+
+let currentBaseUrl = resolveBaseUrl();
+const tokenPageHref = '/console/token';
+const fallbackDocsHref = '#quickstart';
+
+function applyBaseUrl(baseUrl) {
+  currentBaseUrl = normalizeBaseUrl(baseUrl || currentBaseUrl);
+  const input = document.getElementById('baseUrl');
+  if (input) input.value = currentBaseUrl;
+  document.querySelectorAll('[data-base-url-text]').forEach(el => {
+    el.textContent = `"${currentBaseUrl}"`;
+  });
+}
+
+function applyActionLinks() {
+  document.querySelectorAll('[data-token-link]').forEach(el => {
+    el.href = tokenPageHref;
+    el.target = '_top';
+  });
+}
+
+function applyDocsLink(docsLink) {
+  const href = docsLink && docsLink.trim() ? docsLink.trim() : fallbackDocsHref;
+  document.querySelectorAll('[data-docs-link]').forEach(el => {
+    el.href = href;
+    if (href.startsWith('#')) {
+      el.removeAttribute('target');
+    } else {
+      el.target = '_top';
+    }
+  });
+}
+
+function parseHomeContactConfig(raw) {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function normalizeContactUrl(value, allowedProtocols) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, location.origin);
+    if (!allowedProtocols.includes(parsed.protocol)) return '';
+    return parsed.href;
+  } catch (e) {
+    return '';
+  }
+}
+
+function applyHomeContactConfig(rawConfig) {
+  const link = document.getElementById('qr-float');
+  const img = document.getElementById('qr-img');
+  const label = document.getElementById('qr-label');
+  if (!link || !img || !label) return;
+
+  const config = parseHomeContactConfig(rawConfig);
+  if (!config) return;
+
+  const type = String(config.type || '').trim().toLowerCase();
+  const url = normalizeContactUrl(config.url, ['https:', 'http:', 'mailto:', 'tel:']);
+  const qr = normalizeContactUrl(config.qr || config.qr_url, ['https:', 'http:']);
+  const labelText = String(config.label || '').trim();
+
+  if (config.hidden === true || type === 'hidden') {
+    link.hidden = true;
+    return;
+  }
+
+  link.hidden = false;
+  label.textContent = labelText || (url ? 'Contact us' : 'Scan to contact us');
+  img.alt = label.textContent;
+
+  if (qr) {
+    img.src = qr;
+    img.hidden = false;
+  } else if (url) {
+    img.hidden = true;
+  }
+
+  if (url) {
+    link.href = url;
+    link.target = '_top';
+    link.rel = 'noopener noreferrer';
+  } else {
+    link.href = '#';
+    link.removeAttribute('target');
+    link.removeAttribute('rel');
+  }
+  link.setAttribute('aria-label', label.textContent);
+}
+
+document.getElementById('qr-float')?.addEventListener('click', event => {
+  const href = event.currentTarget.getAttribute('href');
+  if (!href || href === '#') event.preventDefault();
+});
+
+function applyStatusConfig(data, options = {}) {
+  if (!data) return;
+  if (typeof data.system_name === 'string') {
+    setBrandName(data.system_name);
+  }
+  const params = new URLSearchParams(location.search);
+  const hasBaseUrlOverride =
+    params.has('base_url') || params.has('baseUrl') || params.has('api_base_url');
+  if (!hasBaseUrlOverride && typeof data.server_address === 'string' && data.server_address.trim()) {
+    applyBaseUrl(buildApiBaseUrl(data.server_address));
+  }
+  if (typeof data.docs_link === 'string') {
+    applyDocsLink(data.docs_link);
+  }
+  if (typeof data.home_contact_config === 'string') {
+    applyHomeContactConfig(data.home_contact_config);
+  }
+  if (!options.skipFooter && typeof data.footer_html === 'string') {
+    applySiteFooter(data.footer_html);
+  }
+}
+
+/* ─── Footer / 备案号：优先安全文本参数，其次读取当前站点后台 Footer 设置 ─── */
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]));
+}
+
+function applySiteFooter(html) {
+  const footer = document.getElementById('siteFooter');
+  const content = document.getElementById('siteFooterContent');
+  if (!footer || !content) return;
+  const value = html && html.trim();
+  if (!value) {
+    footer.hidden = true;
+    content.innerHTML = '';
+    return;
+  }
+  content.innerHTML = value;
+  footer.hidden = false;
+}
+
+function applyFooterFromQuery() {
+  const params = new URLSearchParams(location.search);
+  const icp = params.get('icp');
+  const psb = params.get('psb');
+  if ((icp && icp.trim()) || (psb && psb.trim())) {
+    const parts = [];
+    if (icp && icp.trim()) {
+      parts.push(`<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">${escapeHtml(icp.trim())}</a>`);
+    }
+    if (psb && psb.trim()) {
+      parts.push(escapeHtml(psb.trim()));
+    }
+    applySiteFooter(parts.join(' · '));
+    return true;
+  }
+  return false;
+}
+
+async function loadStatusConfig() {
+  const hasFooterOverride = applyFooterFromQuery();
+  try {
+    const response = await fetch('/api/status', { credentials: 'same-origin' });
+    if (!response.ok) return;
+    const result = await response.json();
+    if (result && result.success && result.data) {
+      applyStatusConfig(result.data, { skipFooter: hasFooterOverride });
+    }
+  } catch (e) {
+    /* 静态预览或跨域部署时忽略 */
+  }
+}
+
+applyBaseUrl(currentBaseUrl);
+applyActionLinks();
+applyDocsLink();
+loadStatusConfig();
+
 /* ─── 主题判断 ─── */
-const isDark = document.documentElement.dataset.theme === 'dark';
+let isDark = document.documentElement.dataset.theme === 'dark';
 
 /* ─── 同步父级主题（同源 iframe）─── */
 (function syncParentTheme(){
+  function readParentTheme(parentDoc) {
+    const cls = parentDoc.documentElement.classList;
+    if (cls.contains('dark')) return 'dark';
+    if (cls.contains('light')) return 'light';
+    if (parentDoc.body && parentDoc.body.getAttribute('theme-mode') === 'dark') return 'dark';
+    // Classic theme removes the dark class/attribute in light mode.
+    return 'light';
+  }
+
+  function applyTheme(next) {
+    if (next !== 'dark' && next !== 'light') return;
+    const cur = document.documentElement.dataset.theme;
+    if (next === cur) return;
+    // 直接更新主题，避免 iframe 重新加载导致页面闪烁。
+    document.documentElement.dataset.theme = next;
+    isDark = next === 'dark';
+    window.dispatchEvent(new CustomEvent('home-theme-change', { detail: { theme: next } }));
+  }
+
   try {
     if (window.parent === window || !window.parent.document) return;
-    const parentHtml = window.parent.document.documentElement;
+    const parentDoc = window.parent.document;
+    const parentHtml = parentDoc.documentElement;
     const observer = new MutationObserver(() => {
-      const cls = parentHtml.classList;
-      const next = cls.contains('dark') ? 'dark' : (cls.contains('light') ? 'light' : null);
-      if (!next) return;
-      const cur = document.documentElement.dataset.theme;
-      if (next !== cur) {
-        // 先更新 data-theme 让 cursor 样式立即切换，避免 reload 期间鼠标消失卡顿
-        document.documentElement.dataset.theme = next;
-        const url = new URL(location.href);
-        url.searchParams.set('theme', next);
-        location.replace(url.toString());
-      }
+      applyTheme(readParentTheme(parentDoc));
     });
     observer.observe(parentHtml, { attributes: true, attributeFilter: ['class'] });
+    if (parentDoc.body) {
+      observer.observe(parentDoc.body, { attributes: true, attributeFilter: ['theme-mode'] });
+    }
   } catch (e) { /* 跨域时静默 */ }
+
+  // Classic frontend also posts the resolved theme to iframe children.
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent) return;
+    const themeMode = event.data && event.data.themeMode;
+    applyTheme(themeMode);
+  });
 })();
 
 /* ─── Custom Cursor（仅深色）─── */
-if (isDark) {
+{
   const dot = document.getElementById('cursor-dot');
   const glow = document.getElementById('cursor-glow');
-  let mx = 0, my = 0, gx = 0, gy = 0;
-  document.addEventListener('mousemove', e => {
-    mx = e.clientX; my = e.clientY;
-    dot.style.left = mx + 'px'; dot.style.top = my + 'px';
-  });
-  (function animGlow() {
-    gx += (mx - gx) * .35; gy += (my - gy) * .35;
-    glow.style.left = gx + 'px'; glow.style.top = gy + 'px';
-    requestAnimationFrame(animGlow);
-  })();
-  document.querySelectorAll('a,button,.flow-card,.feat-card,.prov-card,.copy-btn').forEach(el => {
-    el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
-    el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
-  });
+  if (dot && glow) {
+    let mx = 0, my = 0, gx = 0, gy = 0;
+    document.addEventListener('mousemove', e => {
+      mx = e.clientX; my = e.clientY;
+      dot.style.left = mx + 'px'; dot.style.top = my + 'px';
+    });
+    (function animGlow() {
+      gx += (mx - gx) * .35; gy += (my - gy) * .35;
+      glow.style.left = gx + 'px'; glow.style.top = gy + 'px';
+      requestAnimationFrame(animGlow);
+    })();
+    document.querySelectorAll('a,button,.flow-card,.feat-card,.prov-card,.copy-btn').forEach(el => {
+      el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
+      el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
+    });
+  }
 }
 
 /* ─── Magnetic Buttons ─── */
@@ -1166,6 +2094,7 @@ const belt = document.getElementById('belt');
   el.innerHTML = `<div class="prov-dot" style="background:${p.c};box-shadow:0 0 6px ${p.c}88"></div>${p.n}`;
   belt.appendChild(el);
 });
+applyHomeI18n();
 
 /* ─── Scroll Reveal ─── */
 const rIO = new IntersectionObserver(entries => {
@@ -1287,6 +2216,8 @@ document.querySelectorAll('.prov-card, .feat-card, .flow-card').forEach(card => 
     diffCode.style.opacity = '0';
     setTimeout(() => {
       diffCode.innerHTML = showBefore ? beforeHTML : afterHTML;
+      applyBaseUrl();
+      applyHomeI18n();
       diffCode.style.opacity = '1';
     }, 180);
     tabBefore.classList.toggle('on', showBefore);
@@ -1331,8 +2262,6 @@ function doCopy() {
   let centerX = 0, centerY = 0, cxN = 0.18, cyN = 0.41;
   function computeCenter() {
     const hR = hero.getBoundingClientRect();
-    // X: 直接测量 <em>连接全部 AI</em> 的实际屏幕位置
-    // "全"字约在 em 宽度的 40% 处，这样任何尺寸都严格跟着"全"字走
     if (emEl) {
       const emR = emEl.getBoundingClientRect();
       centerX = emR.left - hR.left + emR.width * 0.48;
@@ -1342,7 +2271,6 @@ function doCopy() {
     } else {
       centerX = canvas.width * 0.22;
     }
-    // Y: h1 底部即"全"字下方空白处
     if (h1El) {
       const h1R = h1El.getBoundingClientRect();
       centerY = h1R.bottom - hR.top + 8;
@@ -1488,14 +2416,17 @@ function doCopy() {
     return { ...p, ox: Math.cos(theta)*r, oy: y, oz: Math.sin(theta)*r, x:0, y:0, z:0, img:null };
   });
 
-  nodes.forEach(n => {
-    const src = isDark ? n.iconD : n.iconL;
-    if (src) {
+  function loadNodeIcons() {
+    nodes.forEach(n => {
+      const src = isDark ? n.iconD : n.iconL;
+      if (!src || n.imgSrc === src) return;
       const img = new Image();
+      n.imgSrc = src;
       img.src = src;
       img.onload = () => { n.img = img; };
-    }
-  });
+    });
+  }
+  loadNodeIcons();
 
   let rotX = 0.2 + Math.random() * 0.4;
   let rotY = Math.random() * Math.PI * 2;
@@ -1507,13 +2438,11 @@ function doCopy() {
 
   /* 浅色模式 glowNode 循环 */
   let glowNode = null;
-  if (!isDark) {
-    let glowIdx = 0;
-    setInterval(() => {
-      glowIdx = (glowIdx + 1) % nodes.length;
-      glowNode = nodes[glowIdx];
-    }, 2500);
-  }
+  let glowIdx = 0;
+  setInterval(() => {
+    glowIdx = (glowIdx + 1) % nodes.length;
+    glowNode = nodes[glowIdx];
+  }, 2500);
 
   canvas.addEventListener('mousemove', e => {
     const rect = canvas.getBoundingClientRect();
@@ -1576,18 +2505,19 @@ function doCopy() {
   }
 
   const packets = [];
-  const connAlphaMul = isDark ? 0.20 : 0.12;
-  const nodeBg = isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.95)';
-  let lastDrawTime = 0;
+  window.addEventListener('home-theme-change', () => {
+    loadNodeIcons();
+    packets.length = 0;
+  });
 
-  function draw(ts) {
-    const dt = lastDrawTime === 0 ? 1 : Math.min((ts - lastDrawTime) / (1000 / 60), 3);
-    lastDrawTime = ts;
+  function draw() {
+    const connAlphaMul = isDark ? 0.20 : 0.12;
+    const nodeBg = isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.95)';
     const baseSpeedY = 0.0028, baseSpeedX = Math.sin(autoRotY * 0.37) * 0.0012;
-    if (clicking) { velY *= Math.pow(0.97, dt); velX *= Math.pow(0.97, dt); }
-    else if (!isDragging) { velY += (baseSpeedY + hoverDY - velY) * 0.04 * dt; velX += (baseSpeedX + hoverDX - velX) * 0.03 * dt; }
-    else { velY *= Math.pow(0.85, dt); velX *= Math.pow(0.85, dt); }
-    rotY += velY * dt; rotX += velX * dt;
+    if (clicking) { velY *= 0.97; velX *= 0.97; }
+    else if (!isDragging) { velY += (baseSpeedY + hoverDY - velY) * 0.04; velX += (baseSpeedX + hoverDX - velX) * 0.03; }
+    else { velY *= 0.85; velX *= 0.85; }
+    rotY += velY; rotX += velX;
     rotX = Math.max(-0.6, Math.min(0.9, rotX));
     autoRotY = rotY;
     ctx.clearRect(0, 0, W, H);
@@ -1612,14 +2542,14 @@ function doCopy() {
     ctx.restore();
 
     const minBaseA = isDark ? 0.04 : 0.02;
-    if (Math.random()<0.06 * dt && connPairs.length>0) {
+    if (Math.random()<0.06 && connPairs.length>0) {
       const [a,b,baseA] = connPairs[Math.floor(Math.random()*connPairs.length)];
       if (baseA > minBaseA) packets.push({a, b, t:0, speed:0.007+Math.random()*0.009});
     }
 
     ctx.save();
     for (let i=packets.length-1; i>=0; i--) {
-      const p=packets[i]; p.t += p.speed * dt;
+      const p=packets[i]; p.t+=p.speed;
       if (p.t>1){packets.splice(i,1);continue;}
       const px=p.a.x+(p.b.x-p.a.x)*p.t, py=p.a.y+(p.b.y-p.a.y)*p.t;
 
@@ -1707,7 +2637,7 @@ function doCopy() {
   }
 
   window._sphereNodes = nodes;
-  requestAnimationFrame(draw);
+  draw();
 })();
 
 /* 主题切换由父级 iframe 控制，移除独立按钮逻辑 */
